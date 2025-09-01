@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-import pyaudio
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
@@ -12,6 +11,10 @@ import torch
 import whisper
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+import librosa
+import soundfile as sf
+import argparse
+import os
 
 import argostranslate.package
 import argostranslate.translate
@@ -150,9 +153,6 @@ class WhisperHandler:
                 audio_float, 
                 fp16=torch.cuda.is_available(),
                 language=language,
-                #no_speech_threshold=0.6,  # Lowered from 0.4 - more sensitive to speech
-                #logprob_threshold=-1.0,   # More permissive
-                #compression_ratio_threshold=3.0,  # More permissive
                 condition_on_previous_text=False
             )
             text = result.get('text', '').strip()
@@ -464,19 +464,40 @@ class VisualizationHandler:
 
         pass
 
-# ---------------- Real-Time Visualization + Whisper ----------------
-class RealTimePitchogramWhisper:
-    def __init__(self, chunk_size=1024, sample_rate=16000, sai_width=200,
+# ---------------- File-Based Pitchogram Processor ----------------
+class FilePitchogramProcessor:
+    def __init__(self, audio_file_path, chunk_size=1024, sample_rate=16000, sai_width=200,
                  whisper_model="tiny", whisper_interval=1.5, 
                  enable_translation=False, from_lang="zh", to_lang="en",
-                 debug=True):
+                 debug=True, playback_speed=1.0):
+        
+        # Load audio file
+        self.audio_file_path = audio_file_path
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
         self.sai_width = sai_width
         self.whisper_interval = whisper_interval
         self.debug = debug
-
-        # CARFAC, SAI and pitchogram
+        self.playback_speed = playback_speed
+        
+        # Load and process audio file
+        print(f"Loading audio file: {audio_file_path}")
+        self.audio_data, self.original_sr = librosa.load(audio_file_path, sr=None)
+        
+        # Resample if necessary
+        if self.original_sr != sample_rate:
+            print(f"Resampling from {self.original_sr}Hz to {sample_rate}Hz")
+            self.audio_data = librosa.resample(self.audio_data, orig_sr=self.original_sr, target_sr=sample_rate)
+        
+        # Normalize audio
+        if np.max(np.abs(self.audio_data)) > 0:
+            self.audio_data = self.audio_data / np.max(np.abs(self.audio_data)) * 0.9
+        
+        self.total_samples = len(self.audio_data)
+        self.duration = self.total_samples / sample_rate
+        print(f"Audio loaded: {self.duration:.2f} seconds, {self.total_samples} samples")
+        
+        # Initialize processing components
         self.carfac = RealCARFACProcessor(fs=sample_rate)
         self.pitchogram = RealTimePitchogram(num_channels=self.carfac.n_channels, sai_width=sai_width)
         self.n_channels = self.carfac.n_channels
@@ -486,9 +507,9 @@ class RealTimePitchogramWhisper:
             num_channels=self.n_channels,
             sai_width=self.sai_width,
             future_lags=self.sai_width - 1,
-            num_triggers_per_frame=2, # PPP.num_triggers_per_frame
-            trigger_window_width=self.chunk_size + 1,   # input_segment_width + 1
-            input_segment_width=self.chunk_size,  # num_samples_per_segment
+            num_triggers_per_frame=2,
+            trigger_window_width=self.chunk_size + 1,
+            input_segment_width=self.chunk_size,
             channel_smoothing_scale=0.5
         )
         self.SAI = sai.SAI(self.sai_params)
@@ -502,38 +523,26 @@ class RealTimePitchogramWhisper:
             self.translation_handler = TranslationHandler(from_lang=from_lang, to_lang=to_lang)
 
         # Audio buffering for Whisper
-        self.audio_queue = queue.Queue(maxsize=50)
         self.whisper_audio_buffer = []
         self.whisper_buffer_lock = threading.Lock()
-        self.last_whisper_time = time.time()
         
-        # Much more sensitive voice activity detection
-        self.energy_threshold = 0.0001  # Significantly lowered
-        self.silence_counter = 0
-        self.max_silence_chunks = 5  # Reduced silence requirement
-        self.audio_chunk_counter = 0
-
+        # Processing state
+        self.current_position = 0
+        self.chunks_processed = 0
+        self.last_whisper_time = 0
+        
         # Visualization
         self.visualization_handler = VisualizationHandler(sample_rate, sai_params=self.sai_params)
-
-        # Changed: Set temporal buffer width to match image width for left-to-right flow
         self.temporal_buffer_width = 200
         self.temporal_buffer = np.zeros((self.n_channels, self.temporal_buffer_width))
-        self.audio_buffer = np.zeros(self.temporal_buffer_width)
         self._setup_visualization()
 
-        # PyAudio
-        self.p = None
-        self.stream = None
-        self.running = False
-
     def _setup_visualization(self):
-        self.fig, self.ax = plt.subplots(figsize=(10, 16))
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
         cmap = self._create_enhanced_colormap()
         self.cmap = cmap
         
-        # Changed: Update extent for left-to-right display
-        # extent = [left, right, bottom, top]
+        # Update extent for left-to-right display
         self.im = self.ax.imshow(self.visualization_handler.img, aspect='auto', origin='upper',
                                  interpolation='bilinear',
                                  extent=[0, self.temporal_buffer_width, 0, self.visualization_handler.output.shape[0]])
@@ -548,14 +557,16 @@ class RealTimePitchogramWhisper:
                                               color='lime', weight='bold',
                                               bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.9))
         
-        # Debug info text
-        self.debug_text = self.ax.text(0.02, 0.98, '', transform=self.ax.transAxes,
-                                      verticalalignment='top', fontsize=8,
-                                      color='yellow', weight='normal',
-                                      bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
+        # Progress and info text
+        self.progress_text = self.ax.text(0.02, 0.98, '', transform=self.ax.transAxes,
+                                         verticalalignment='top', fontsize=10,
+                                         color='cyan', weight='bold',
+                                         bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
         
         plt.tight_layout()
         self.ax.axis('off')
+        self.ax.set_title(f"Audio File Pitchogram: {os.path.basename(self.audio_file_path)}", 
+                         color='white', fontsize=14, pad=20)
 
     def _create_enhanced_colormap(self):
         colors = ['#000022', '#000055', '#0033AA', '#0066FF', '#00AAFF',
@@ -563,196 +574,85 @@ class RealTimePitchogramWhisper:
                   '#FF7700', '#FF3300', '#FF0044', '#CC0077', '#FFFFFF']
         return LinearSegmentedColormap.from_list("enhanced_audio", colors, N=256)
 
-    def list_audio_devices(self):
-        """List available audio input devices"""
-        if self.p is None:
-            self.p = pyaudio.PyAudio()
+    def get_next_chunk(self):
+        """Get the next chunk of audio data"""
+        if self.current_position >= self.total_samples:
+            return None
         
-        print("\nAvailable audio input devices:")
-        for i in range(self.p.get_device_count()):
-            info = self.p.get_device_info_by_index(i)
-            if info['maxInputChannels'] > 0:
-                print(f"  Device {i}: {info['name']} (Channels: {info['maxInputChannels']})")
-        print()
-
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        try:
-            # Convert int16 to float32
-            audio_float = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
-            energy = np.mean(np.square(audio_float))
-            
-            self.audio_chunk_counter += 1
-
-            
-            # Add to processing queue
-            try:
-                self.audio_queue.put_nowait(audio_float)
-            except queue.Full:
-                try:
-                    self.audio_queue.get_nowait()  # Remove oldest
-                    self.audio_queue.put_nowait(audio_float)
-                except queue.Empty:
-                    pass
-
-            # Add to Whisper buffer
-            with self.whisper_buffer_lock:
-                self.whisper_audio_buffer.extend(audio_float)
-                
-                # Keep buffer manageable (max 15 seconds for better context)
-                max_buffer_size = self.sample_rate * 15
-                if len(self.whisper_audio_buffer) > max_buffer_size:
-                    excess = len(self.whisper_audio_buffer) - max_buffer_size
-                    self.whisper_audio_buffer = self.whisper_audio_buffer[excess:]
-
-        except Exception as e:
-            print(f"Audio callback error: {e}")
+        end_position = min(self.current_position + self.chunk_size, self.total_samples)
+        chunk = self.audio_data[self.current_position:end_position]
         
-        return (in_data, pyaudio.paContinue)
+        # Pad if necessary
+        if len(chunk) < self.chunk_size:
+            chunk = np.pad(chunk, (0, self.chunk_size - len(chunk)), 'constant')
+        
+        self.current_position = end_position
+        return chunk.astype(np.float32)
 
-    def process_audio(self):
-        while self.running:
-            try:
-                audio_chunk = self.audio_queue.get(timeout=0.1)
-                
-                # Process with CARFAC
-                nap_output = self.carfac.process_chunk(audio_chunk)
-
-                # Process with SAI
-                sai_output = self.SAI.RunSegment(nap_output)
-                self.visualization_handler.get_vowel_embedding(nap_output)
-                pitch_frame = self.visualization_handler.run_frame(sai_output)
-
-                # Changed: Update temporal buffer by shifting left and adding new column on the right
-                # This creates the left-to-right scrolling effect
-                self.visualization_handler.img[:, :-1] = self.visualization_handler.img[:, 1:]
-                self.visualization_handler.draw_column(self.visualization_handler.img[:, -1])
-
-                # Voice activity detection for Whisper processing
-                energy = np.mean(np.square(audio_chunk))
-                if energy > self.energy_threshold:
-                    self.silence_counter = 0
-                else:
-                    self.silence_counter += 1
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"Audio processing error: {e}")
-                raise e
-                continue
-
-    def whisper_processing_loop(self):
-        while self.running:
-            try:
-                current_time = time.time()
-                
-                with self.whisper_buffer_lock:
-                    buffer_size = len(self.whisper_audio_buffer)
-                    if buffer_size > 0:
-                        audio_energy = np.mean(np.square(self.whisper_audio_buffer[-min(1000, buffer_size):]))
+    def process_chunk_for_whisper(self, chunk):
+        """Add chunk to Whisper processing buffer"""
+        with self.whisper_buffer_lock:
+            self.whisper_audio_buffer.extend(chunk)
+            
+            # Process Whisper transcription periodically
+            current_time = self.chunks_processed * self.chunk_size / self.sample_rate
+            if (current_time - self.last_whisper_time) >= self.whisper_interval:
+                if len(self.whisper_audio_buffer) >= int(self.sample_rate * 0.8):
+                    # Process transcription in separate thread
+                    audio_to_process = np.array(self.whisper_audio_buffer, dtype=np.float32)
+                    
+                    # Keep some overlap for context
+                    overlap_size = int(self.sample_rate * 0.5)
+                    if len(self.whisper_audio_buffer) > overlap_size:
+                        self.whisper_audio_buffer = self.whisper_audio_buffer[-overlap_size:]
                     else:
-                        audio_energy = 0
-                
-                # Simplified processing logic - process based on time interval OR sufficient audio
-                time_condition = (current_time - self.last_whisper_time) >= self.whisper_interval
-                buffer_condition = buffer_size >= int(self.sample_rate * 1.0)  # At least 1 second of audio
-                
-                should_process = time_condition and buffer_condition
-                
-                if self.debug and self.audio_chunk_counter % 100 == 0:
-                    print(f"DEBUG: Buffer size: {buffer_size/self.sample_rate:.1f}s, "
-                          f"Energy: {audio_energy:.6f}, "
-                          f"Should process: {should_process}, "
-                          f"Time since last: {current_time - self.last_whisper_time:.1f}s")
-                
-                if should_process:
-                    with self.whisper_buffer_lock:
-                        min_required_samples = int(self.sample_rate * 0.8)  # Reduced minimum
-                        
-                        if len(self.whisper_audio_buffer) >= min_required_samples:
-                            # Copy buffer for processing
-                            audio_to_process = np.array(self.whisper_audio_buffer, dtype=np.float32)
-                            
-                            # Check audio quality before processing
-                            energy = np.mean(np.square(audio_to_process))
-                            max_amplitude = np.max(np.abs(audio_to_process))
-                            
-                            if self.debug:
-                                print(f"DEBUG: Processing audio chunk: {len(audio_to_process)/self.sample_rate:.1f}s, "
-                                      f"energy={energy:.6f}, max_amp={max_amplitude:.4f}")
-                            
-                            # More lenient energy check
-                            if energy > self.energy_threshold * 0.1 and max_amplitude > 0.001:
-                                
-                                # Keep more overlap for better context
-                                overlap_size = int(self.sample_rate * 1.0)  # 1 second overlap
-                                if len(self.whisper_audio_buffer) > overlap_size:
-                                    self.whisper_audio_buffer = self.whisper_audio_buffer[-overlap_size:]
-                                else:
-                                    self.whisper_audio_buffer = []
-                                
-                                # Process in separate thread
-                                threading.Thread(
-                                    target=self._process_whisper_chunk,
-                                    args=(audio_to_process,),
-                                    daemon=True
-                                ).start()
-                            else:
-                                if self.debug:
-                                    print(f"DEBUG: Skipping processing - insufficient audio quality")
-                                # Only clear buffer if audio is extremely quiet
-                                if energy < self.energy_threshold * 0.01:
-                                    self.whisper_audio_buffer = []
-                            
+                        self.whisper_audio_buffer = []
+                    
+                    threading.Thread(
+                        target=self._process_whisper_chunk,
+                        args=(audio_to_process, current_time),
+                        daemon=True
+                    ).start()
+                    
                     self.last_whisper_time = current_time
-                
-                time.sleep(0.1)  # Faster polling for more responsive transcription
-                
-            except Exception as e:
-                print(f"Whisper processing loop error: {e}")
-                time.sleep(0.5)
 
-    def _process_whisper_chunk(self, audio_data):
+    def _process_whisper_chunk(self, audio_data, timestamp):
+        """Process Whisper transcription"""
         try:
             if self.debug:
-                print(f"DEBUG: Starting Whisper transcription for {len(audio_data)/self.sample_rate:.1f}s of audio")
+                print(f"DEBUG: Transcribing audio at {timestamp:.1f}s")
 
-            language = 'en' # Default language, uses from_lang if translation enabled
+            language = 'en'
             if self.translation_handler:
                 language = self.translation_handler.from_lang
 
             text = self.whisper_handler.transcribe_audio(audio_data, language=language)
             if text and len(text.strip()) > 0:
-                self.whisper_handler.add_transcription_line(text)
-                if self.debug:
-                    print(f"DEBUG: Successfully transcribed: '{text}'")
-
+                timestamped_text = f"[{timestamp:.1f}s] {text}"
+                self.whisper_handler.add_transcription_line(timestamped_text)
+                
                 if self.translation_handler:
                     translated_text = self.translation_handler.translate(text)
                     if translated_text:
-                        print(f"{self.translation_handler.from_lang}-{self.translation_handler.to_lang}: {translated_text}")
-            else:
-                if self.debug:
-                    print(f"DEBUG: No transcription result")
+                        print(f"[{timestamp:.1f}s] {self.translation_handler.from_lang}->{self.translation_handler.to_lang}: {translated_text}")
         except Exception as e:
             print(f"Whisper chunk processing error: {e}")
 
     def _analyze_pitch_content(self):
-        # Changed: Analyze the rightmost column (latest data) instead of the last row
+        """Analyze pitch content from the visualization"""
         current_frame = self.visualization_handler.img[:, -1, :]
-        # Get the intensity by looking at the brightest pixel in the latest column
-        intensities = np.mean(current_frame, axis=1)  # Average RGB values for each frequency bin
+        intensities = np.mean(current_frame, axis=1)
         
-        if np.max(intensities) > 50:  # Threshold for detecting activity
+        if np.max(intensities) > 50:
             max_freq_bin = np.argmax(intensities)
-            # Convert frequency bin to approximate frequency
             freq_ratio = max_freq_bin / max(1, len(intensities) - 1)
             estimated_freq = 80 * (8000 / 80) ** freq_ratio
-            intensity = np.max(intensities) / 255.0  # Normalize to 0-1
+            intensity = np.max(intensities) / 255.0
             return f"Pitch: ~{estimated_freq:.0f} Hz (Intensity: {intensity:.2f})"
         return "No clear pitch detected"
 
     def update_visualization(self, frame):
+        """Update the visualization display"""
         try:
             # Update pitchogram
             current_max = np.max(self.visualization_handler.img) if self.visualization_handler.img.size else 1
@@ -765,132 +665,129 @@ class RealTimePitchogramWhisper:
             # Update transcription
             transcription_text = self.whisper_handler.get_display_text()
             if not transcription_text:
-                transcription_text = "Listening... (speak into microphone)"
+                transcription_text = "Processing audio file..."
             self.transcription_text.set_text(transcription_text)
 
-            # Update debug info
-            if self.debug:
-                with self.whisper_buffer_lock:
-                    buffer_seconds = len(self.whisper_audio_buffer) / self.sample_rate
-                current_energy = np.mean(np.square(self.audio_buffer)) if len(self.audio_buffer) > 0 else 0
-                debug_info = f"Buffer: {buffer_seconds:.1f}s | Energy: {current_energy:.4f} | Threshold: {self.energy_threshold:.4f}"
-                self.debug_text.set_text(debug_info)
-            
+            # Update progress
+            current_time = self.chunks_processed * self.chunk_size / self.sample_rate
+            progress_percent = (current_time / self.duration) * 100
+            progress_info = f"Progress: {current_time:.1f}s / {self.duration:.1f}s ({progress_percent:.1f}%)\nSpeed: {self.playback_speed:.1f}x"
+            self.progress_text.set_text(progress_info)
             
         except Exception as e:
             print(f"Visualization update error: {e}")
         
-        return [self.im, self.pitch_text, self.transcription_text, self.debug_text]
+        return [self.im, self.pitch_text, self.transcription_text, self.progress_text]
 
-    def start(self):
+    def process_file(self):
+        """Process the entire audio file"""
+        print(f"Starting to process audio file...")
+        print(f"File duration: {self.duration:.2f} seconds")
+        print(f"Processing at {self.playback_speed:.1f}x speed")
         
-        # Initialize PyAudio
-        self.p = pyaudio.PyAudio()
+        # Set up animation
+        # Calculate interval based on playback speed
+        real_time_interval = (self.chunk_size / self.sample_rate) * 1000  # ms
+        animation_interval = max(1, int(real_time_interval / self.playback_speed))
         
-        # List available devices for debugging
-        if self.debug:
-            self.list_audio_devices()
-        
-        try:
-            # Try to use default input device first
-            self.stream = self.p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.sample_rate,
-                input=True,
-                frames_per_buffer=self.chunk_size,
-                stream_callback=self.audio_callback,
-                start=False
-            )
-            print(f"Audio stream opened: {self.sample_rate}Hz, {self.chunk_size} frames/buffer")
-        except Exception as e:
-            print(f"Failed to open audio stream with default device: {e}")
-            # Try to find a working input device
-            for i in range(self.p.get_device_count()):
-                try:
-                    info = self.p.get_device_info_by_index(i)
-                    if info['maxInputChannels'] > 0:
-                        print(f"Trying device {i}: {info['name']}")
-                        self.stream = self.p.open(
-                            format=pyaudio.paInt16,
-                            channels=1,
-                            rate=self.sample_rate,
-                            input=True,
-                            input_device_index=i,
-                            frames_per_buffer=self.chunk_size,
-                            stream_callback=self.audio_callback,
-                            start=False
-                        )
-                        print(f"Successfully opened device {i}")
-                        break
-                except:
-                    continue
-            else:
-                print("Failed to open any audio input device")
-                self.cleanup()
-                return
-
-        # Start processing threads
-        self.running = True
-        threading.Thread(target=self.process_audio, daemon=True).start()
-        threading.Thread(target=self.whisper_processing_loop, daemon=True).start()
-        
-        # Start audio stream
-        self.stream.start_stream()
-        print("System started. Speak into the microphone. Press Ctrl+C to stop.")
-        print("Debug mode enabled - watch the console for detailed information.")
-        print("Pitchogram now flows from left to right - newest audio on the right side.")
-        
-        # Start visualization
         self.animation = animation.FuncAnimation(
-            self.fig, self.update_visualization, interval=50, blit=False,
-            cache_frame_data=False
+            self.fig, self.animate_frame, interval=animation_interval, 
+            blit=False, cache_frame_data=False, repeat=False
         )
+        
         plt.show()
 
-    def cleanup(self):
-        self.running = False
+    def animate_frame(self, frame_num):
+        """Animation frame function"""
+        # Get next chunk
+        chunk = self.get_next_chunk()
+        if chunk is None:
+            print("Finished processing audio file")
+            return self.update_visualization(frame_num)
+        
         try:
-            if self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-        except:
-            pass
-        try:
-            if self.p:
-                self.p.terminate()
-        except:
-            pass
+            # Process with CARFAC
+            nap_output = self.carfac.process_chunk(chunk)
 
-    def stop(self):
-        self.cleanup()
-        plt.close('all')
-        print("System stopped.")
+            # Process with SAI
+            sai_output = self.SAI.RunSegment(nap_output)
+            self.visualization_handler.get_vowel_embedding(nap_output)
+            pitch_frame = self.visualization_handler.run_frame(sai_output)
+
+            # Update visualization - shift left and add new column on the right
+            self.visualization_handler.img[:, :-1] = self.visualization_handler.img[:, 1:]
+            self.visualization_handler.draw_column(self.visualization_handler.img[:, -1])
+
+            # Process for Whisper
+            self.process_chunk_for_whisper(chunk)
+            
+            self.chunks_processed += 1
+            
+        except Exception as e:
+            print(f"Frame processing error: {e}")
+        
+        return self.update_visualization(frame_num)
 
 # ---------------- Main ----------------
-if __name__ == "__main__":
-    system = None
+def main():
+    parser = argparse.ArgumentParser(description='Process audio file with pitchogram and Whisper transcription')
+    parser.add_argument('audio_file', help='Path to audio file')
+    parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
+    parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
+    parser.add_argument('--sai-width', type=int, default=400, help='SAI width (default: 400)')
+    parser.add_argument('--whisper-model', default='tiny', help='Whisper model (default: tiny)')
+    parser.add_argument('--whisper-interval', type=float, default=2.0, help='Whisper processing interval in seconds (default: 2.0)')
+    parser.add_argument('--enable-translation', action='store_true', help='Enable translation')
+    parser.add_argument('--from-lang', default='en', help='Source language for translation (default: en)')
+    parser.add_argument('--to-lang', default='zh', help='Target language for translation (default: zh)')
+    parser.add_argument('--speed', type=float, default=1.0, help='Playback speed multiplier (default: 1.0)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
+    # Check if audio file exists
+    if not os.path.exists(args.audio_file):
+        print(f"Error: Audio file '{args.audio_file}' not found")
+        return
+    
+    # Check if audio file format is supported
+    supported_formats = ['.wav', '.mp3', '.flac', '.m4a', '.ogg', '.aiff']
+    file_ext = os.path.splitext(args.audio_file)[1].lower()
+    if file_ext not in supported_formats:
+        print(f"Warning: File format '{file_ext}' may not be supported. Supported formats: {supported_formats}")
+    
     try:
-        system = RealTimePitchogramWhisper(
-            chunk_size=512,
-            sample_rate=16000,
-            sai_width=400,
-            whisper_model="tiny",    # Using tiny model for faster processing
-            whisper_interval=1.5,    # Process every 1.5 seconds
-            enable_translation=False,
-            from_lang="zh",
-            to_lang="en",
-            debug=True               # Enable debug mode
+        processor = FilePitchogramProcessor(
+            audio_file_path=args.audio_file,
+            chunk_size=args.chunk_size,
+            sample_rate=args.sample_rate,
+            sai_width=args.sai_width,
+            whisper_model=args.whisper_model,
+            whisper_interval=args.whisper_interval,
+            enable_translation=args.enable_translation,
+            from_lang=args.from_lang,
+            to_lang=args.to_lang,
+            debug=args.debug,
+            playback_speed=args.speed
         )
-        system.start()
+        
+        processor.process_file()
+        
     except KeyboardInterrupt:
-        print("\nShutting down...")
-        if system:
-            system.stop()
+        print("\nProcessing interrupted by user")
     except Exception as e:
-        print(f"Error: {e}")
-        if system:
-            system.stop()
-        raise e
-    finally:
-        print("Cleanup complete.")
+        print(f"Error processing audio file: {e}")
+        if args.debug:
+            import traceback
+            traceback.print_exc()
+
+if __name__ == "__main__":
+    # Example usage when run directly
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <audio_file_path> [options]")
+        print("Example: python script.py audio.wav --whisper-model base --speed 0.5 --debug")
+        print("Run with --help for all options")
+        sys.exit(1)
+    
+    main()
