@@ -124,7 +124,7 @@ class WhisperHandler:
     def transcribe_audio(self, audio_data, language='en'):
         
         # Reduced minimum length for more responsive transcription
-        min_samples = int(self.sample_rate * 0.5)  # Reduced from 1.0 second
+        min_samples = int(self.sample_rate * 0.3)  # Reduced from 1.0 second
         
         # Ensure audio is float32 in range [-1, 1]
         if audio_data.dtype == np.int16:
@@ -150,10 +150,11 @@ class WhisperHandler:
                 audio_float, 
                 fp16=torch.cuda.is_available(),
                 language=language,
-                #no_speech_threshold=0.6,  # Lowered from 0.4 - more sensitive to speech
-                #logprob_threshold=-1.0,   # More permissive
-                #compression_ratio_threshold=3.0,  # More permissive
-                condition_on_previous_text=False
+                condition_on_previous_text=False,
+                temperature=0.0,  # Lower temperature for more consistent output
+                no_speech_threshold=0.4,  # More lenient speech detection
+                logprob_threshold=-0.8,  # More conservative logprob filtering
+                compression_ratio_threshold=2.2  # Slightly more lenient compression
             )
             text = result.get('text', '').strip()
             
@@ -187,7 +188,7 @@ class WhisperHandler:
             if len(self.transcription) > 20:
                 self.transcription = self.transcription[-20:]
 
-    def get_display_text(self, max_lines=5, max_chars=200):
+    def get_display_text(self, max_lines=2, max_chars=80):
         with self.lock:
             if not self.transcription:
                 return ""
@@ -196,7 +197,7 @@ class WhisperHandler:
             display = '\n'.join(lines)
             
             if len(display) > max_chars:
-                display = "..." + display[-(max_chars-3):]
+                display = "..." + display[-(max_chars-10):]
             
             return display
 
@@ -355,7 +356,6 @@ class VisualizationHandler:
         # Changed: Initialize with proper dimensions for left-to-right flow
         # Shape is now (height, width, channels) = (frequency_bins, time_samples, RGB)
         self.img = np.zeros((self.output.shape[0], 200, 3), dtype=np.uint8)
-        # print("VisualizationHandler shapes: ", self.workspace.shape, self.output.shape, self.mask.shape)
 
     def car_pole_frequencies(self, sample_rate_hz, car_params: CarParams) -> np.ndarray:
             """
@@ -401,7 +401,6 @@ class VisualizationHandler:
         vowel_matrix *= erb_per_step / 2
         return vowel_matrix
 
-    # TODO: probably extract this
     def frequency_to_channel_index(self, sample_rate_hz: int, erb_per_step: float, pole_freq: int):
         """
         Implements CARFrequencyToChannelIndex from car.cc.
@@ -457,12 +456,148 @@ class VisualizationHandler:
         k_scale: float = 0.5 * 255
         tint *= k_scale
 
-        # print("draw_column:", column_ptr.shape, self.output.shape)
-
         for i in range(self.output.shape[0]):
             column_ptr[i] = np.clip(np.int32((tint * self.output[i])), 0, 255)
 
-        pass
+# ---------------- Sound Ring Visualizer ----------------
+class SoundRingVisualizer:
+    def __init__(self, center_x=0.5, center_y=0.5):
+        self.center_x = center_x
+        self.center_y = center_y
+        
+        # Ring parameters - Enhanced single ring
+        self.base_radius = 0.08   # Starting radius (smaller base)
+        self.max_radius = 0.35    # Maximum radius 
+        self.current_radius = self.base_radius
+        
+        # Animation parameters
+        self.target_radius = self.base_radius
+        self.radius_smoothing = 0.15  # Faster response
+        self.pulse_phase = 0.0
+        self.pulse_speed = 0.1
+        
+        # Enhanced visual parameters
+        self.base_alpha = 0.6
+        self.max_alpha = 1.0
+        self.current_alpha = self.base_alpha
+        self.base_linewidth = 3.0
+        self.max_linewidth = 8.0
+        self.current_linewidth = self.base_linewidth
+        
+        # Sound intensity history for smoother animation
+        self.intensity_history = []
+        self.max_history_length = 8  # Shorter history for more responsiveness
+        
+        # Color parameters
+        self.color_transition_speed = 0.1
+        self.current_color = [0, 0.6, 1.0]  # Start with blue
+        
+    def update_intensity(self, intensity):
+        """Update the ring size based on sound intensity (0.0 to 1.0)"""
+        # Store intensity history for smoothing
+        self.intensity_history.append(intensity)
+        if len(self.intensity_history) > self.max_history_length:
+            self.intensity_history.pop(0)
+        
+        # Calculate smoothed intensity
+        smoothed_intensity = np.mean(self.intensity_history) if self.intensity_history else 0
+        
+        # Map intensity to radius with more dramatic scaling
+        intensity_factor = smoothed_intensity ** 0.7  # Slight power curve for better visual response
+        self.target_radius = self.base_radius + (self.max_radius - self.base_radius) * intensity_factor
+        
+        # Map intensity to alpha for visibility
+        self.current_alpha = self.base_alpha + (self.max_alpha - self.base_alpha) * smoothed_intensity
+        
+        # Map intensity to line width
+        self.current_linewidth = self.base_linewidth + (self.max_linewidth - self.base_linewidth) * smoothed_intensity
+        
+        # Update pulse speed based on intensity
+        self.pulse_speed = 0.08 + smoothed_intensity * 0.25
+        
+        # Update color based on intensity
+        self._update_color(smoothed_intensity)
+        
+    def _update_color(self, intensity):
+        """Update ring color based on intensity"""
+        if intensity < 0.3:
+            # Low intensity - cool blue/cyan
+            target_color = [0, 0.6, 1.0]
+        elif intensity < 0.6:
+            # Medium intensity - warm yellow/orange
+            target_color = [1.0, 0.7, 0.1]
+        else:
+            # High intensity - hot red/magenta
+            target_color = [1.0, 0.2, 0.6]
+        
+        # Smooth color transition
+        for i in range(3):
+            color_diff = target_color[i] - self.current_color[i]
+            self.current_color[i] += color_diff * self.color_transition_speed
+            
+    def animate_step(self):
+        """Update animation parameters for smooth transitions"""
+        # Smooth radius transition
+        radius_diff = self.target_radius - self.current_radius
+        self.current_radius += radius_diff * self.radius_smoothing
+        
+        # Update pulse phase
+        self.pulse_phase += self.pulse_speed
+        if self.pulse_phase > 2 * np.pi:
+            self.pulse_phase -= 2 * np.pi
+    
+    def draw_rings(self, ax, current_intensity=0.0):
+        """Draw the enhanced sound ring on the given matplotlib axes"""
+        # Clear any existing ring artists
+        ring_artists = getattr(self, '_ring_artists', [])
+        for artist in ring_artists:
+            try:
+                artist.remove()
+            except:
+                pass
+        
+        self._ring_artists = []
+        
+        # Calculate pulse effect - more subtle
+        pulse_factor = 1.0 + 0.08 * np.sin(self.pulse_phase) * current_intensity
+        
+        # Main ring
+        ring_radius = self.current_radius * pulse_factor
+        
+        # Create main circle with current properties
+        main_circle = plt.Circle(
+            (self.center_x, self.center_y), 
+            ring_radius,
+            fill=False,
+            edgecolor=tuple(self.current_color),
+            alpha=max(0.3, self.current_alpha),
+            linewidth=self.current_linewidth,
+            linestyle='-',
+            transform=ax.transAxes  # Use axis coordinates
+        )
+        
+        # Add to axes
+        artist = ax.add_patch(main_circle)
+        self._ring_artists.append(artist)
+        
+        # Optional: Add a subtle outer ring for high intensity
+        if current_intensity > 0.5:
+            outer_radius = ring_radius * 1.3
+            outer_alpha = (current_intensity - 0.5) * 0.4  # Fade in above 0.5 intensity
+            
+            outer_circle = plt.Circle(
+                (self.center_x, self.center_y),
+                outer_radius,
+                fill=False,
+                edgecolor=tuple(self.current_color),
+                alpha=outer_alpha,
+                linewidth=max(1.0, self.current_linewidth * 0.6),
+                linestyle='-',
+                transform=ax.transAxes
+            )
+            
+            outer_artist = ax.add_patch(outer_circle)
+            self._ring_artists.append(outer_artist)
 
 # ---------------- Real-Time Visualization + Whisper ----------------
 class RealTimePitchogramWhisper:
@@ -486,9 +621,9 @@ class RealTimePitchogramWhisper:
             num_channels=self.n_channels,
             sai_width=self.sai_width,
             future_lags=self.sai_width - 1,
-            num_triggers_per_frame=2, # PPP.num_triggers_per_frame
-            trigger_window_width=self.chunk_size + 1,   # input_segment_width + 1
-            input_segment_width=self.chunk_size,  # num_samples_per_segment
+            num_triggers_per_frame=2,
+            trigger_window_width=self.chunk_size + 1,
+            input_segment_width=self.chunk_size,
             channel_smoothing_scale=0.5
         )
         self.SAI = sai.SAI(self.sai_params)
@@ -507,19 +642,33 @@ class RealTimePitchogramWhisper:
         self.whisper_buffer_lock = threading.Lock()
         self.last_whisper_time = time.time()
         
-        # Much more sensitive voice activity detection
-        self.energy_threshold = 0.0001  # Significantly lowered
+        # Voice activity detection
+        self.energy_threshold = 0.0001
         self.silence_counter = 0
-        self.max_silence_chunks = 5  # Reduced silence requirement
+        self.max_silence_chunks = 5
         self.audio_chunk_counter = 0
 
         # Visualization
         self.visualization_handler = VisualizationHandler(sample_rate, sai_params=self.sai_params)
 
-        # Changed: Set temporal buffer width to match image width for left-to-right flow
+        # Sound Ring Visualizer - Enhanced single ring at center
+        self.sound_ring = SoundRingVisualizer(center_x=0.5, center_y=0.5)
+
+        # Set temporal buffer width to match image width for left-to-right flow
         self.temporal_buffer_width = 200
         self.temporal_buffer = np.zeros((self.n_channels, self.temporal_buffer_width))
         self.audio_buffer = np.zeros(self.temporal_buffer_width)
+        
+        # Sound intensity cycle visualization
+        self.intensity_cycle_buffer = np.zeros(self.temporal_buffer_width)
+        self.cycle_phase = 0.0
+        self.cycle_speed = 0.1  # Base cycle speed
+        self.intensity_history = []
+        self.max_history_length = 50
+        
+        # Current sound intensity for ring
+        self.current_sound_intensity = 0.0
+        
         self._setup_visualization()
 
         # PyAudio
@@ -528,25 +677,38 @@ class RealTimePitchogramWhisper:
         self.running = False
 
     def _setup_visualization(self):
-        self.fig, self.ax = plt.subplots(figsize=(10, 16))
+        self.fig, self.ax = plt.subplots(figsize=(12, 16))
+        
+        # Set dark background for intensity visualization
+        self.fig.patch.set_facecolor('black')
+        self.ax.set_facecolor('black')
+        
         cmap = self._create_enhanced_colormap()
         self.cmap = cmap
         
-        # Changed: Update extent for left-to-right display
+        # Main pitchogram display
         # extent = [left, right, bottom, top]
         self.im = self.ax.imshow(self.visualization_handler.img, aspect='auto', origin='lower',
                                  interpolation='bilinear',
                                  extent=[0, self.temporal_buffer_width, 0, self.visualization_handler.output.shape[0]])
+
+        # Create intensity background overlay
+        self.intensity_background = self.ax.imshow(
+            np.zeros((self.visualization_handler.output.shape[0], self.temporal_buffer_width, 4)), 
+            aspect='auto', origin='lower', alpha=0.3,
+            extent=[0, self.temporal_buffer_width, 0, self.visualization_handler.output.shape[0]]
+        )
 
         self.pitch_text = self.ax.text(0.98, 0.98, '', transform=self.ax.transAxes,
                                        verticalalignment='top', horizontalalignment='right',
                                        fontsize=10, color='white', weight='bold',
                                        bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
         
-        self.transcription_text = self.ax.text(0.02, 0.02, '', transform=self.ax.transAxes,
-                                              verticalalignment='bottom', fontsize=12,
-                                              color='lime', weight='bold',
-                                              bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.9))
+        # ENHANCED CENTERED TRANSCRIPTION TEXT - Much larger and prominently displayed
+        self.transcription_text = self.ax.text(0.5, 0.5, '', transform=self.ax.transAxes,
+                                              verticalalignment='center', horizontalalignment='center',
+                                              fontsize=24, color='white', weight='bold',
+                                              wrap=True)
         
         # Debug info text
         self.debug_text = self.ax.text(0.02, 0.98, '', transform=self.ax.transAxes,
@@ -554,9 +716,19 @@ class RealTimePitchogramWhisper:
                                       color='yellow', weight='normal',
                                       bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
         
-        plt.tight_layout()
-        self.ax.axis('off')
-
+        # Intensity indicator text
+        self.intensity_text = self.ax.text(0.5, 0.85, '', transform=self.ax.transAxes,
+                                           verticalalignment='top', horizontalalignment='center',
+                                           fontsize=12, color='white', weight='bold',
+                                           bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8))
+        
+        # Sound ring intensity display - moved to top left
+        self.ring_intensity_text = self.ax.text(0.02, 0.85, '', transform=self.ax.transAxes,
+                                               verticalalignment='top', horizontalalignment='left',
+                                               fontsize=10, color='cyan', weight='bold',
+                                               bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8))
+        
+        
     def _create_enhanced_colormap(self):
         colors = ['#000022', '#000055', '#0033AA', '#0066FF', '#00AAFF',
                   '#00FFAA', '#33FF77', '#77FF33', '#AAFF00', '#FFAA00',
@@ -575,6 +747,115 @@ class RealTimePitchogramWhisper:
                 print(f"  Device {i}: {info['name']} (Channels: {info['maxInputChannels']})")
         print()
 
+    def calculate_loudness_metrics(self, audio_chunk):
+        """Calculate various loudness metrics from audio chunk"""
+        
+        # RMS (Root Mean Square) - overall energy level
+        rms = np.sqrt(np.mean(np.square(audio_chunk)))
+        
+        # Peak level - maximum absolute amplitude
+        peak = np.max(np.abs(audio_chunk))
+        
+        # Perceived loudness using A-weighting approximation
+        if len(audio_chunk) > 1:
+            high_passed = np.diff(audio_chunk)
+            perceived_loudness = np.sqrt(np.mean(np.square(high_passed)))
+        else:
+            perceived_loudness = rms
+        
+        # Convert to dB scale (logarithmic) but normalize to 0-1 range
+        rms_db = 20 * np.log10(max(rms, 1e-10))
+        peak_db = 20 * np.log10(max(peak, 1e-10))
+        loudness_db = 20 * np.log10(max(perceived_loudness, 1e-10))
+        
+        # Normalize to 0-1 range (assuming input range of -60dB to 0dB)
+        rms_norm = max(0, min(1, (rms_db + 60) / 60))
+        peak_norm = max(0, min(1, (peak_db + 60) / 60))
+        loudness_norm = max(0, min(1, (loudness_db + 60) / 60))
+        
+        return rms_norm, peak_norm, loudness_norm
+
+    def update_intensity_cycle(self, loudness, peak):
+        """Update the intensity cycle visualization based on audio intensity"""
+        # Store recent intensity for cycle calculation
+        overall_intensity = (loudness + peak) / 2
+        self.intensity_history.append(overall_intensity)
+        if len(self.intensity_history) > self.max_history_length:
+            self.intensity_history.pop(0)
+        
+        # Update current sound intensity for the ring
+        self.current_sound_intensity = overall_intensity
+        
+        # Calculate adaptive cycle speed based on intensity
+        avg_intensity = np.mean(self.intensity_history) if self.intensity_history else 0
+        self.cycle_speed = 0.05 + avg_intensity * 0.5  # Faster cycles with more intensity
+        
+        # Update cycle phase
+        self.cycle_phase += self.cycle_speed
+        if self.cycle_phase > 2 * np.pi:
+            self.cycle_phase -= 2 * np.pi
+        
+        # Generate intensity cycle pattern
+        for i in range(self.temporal_buffer_width):
+            # Create spatial wave pattern that moves with time
+            spatial_phase = (i / self.temporal_buffer_width) * 2 * np.pi
+            wave_value = np.sin(self.cycle_phase + spatial_phase) * 0.5 + 0.5
+            
+            # Modulate wave with current intensity
+            intensity_factor = avg_intensity * 2  # Amplify the effect
+            self.intensity_cycle_buffer[i] = wave_value * intensity_factor
+
+    def generate_intensity_background(self):
+        """Generate dynamic background based on intensity cycles"""
+        height = self.visualization_handler.output.shape[0]
+        width = self.temporal_buffer_width
+        background = np.zeros((height, width, 4))  # RGBA
+        
+        # Get current average intensity
+        current_intensity = np.mean(self.intensity_history) if self.intensity_history else 0
+        
+        # Create different intensity patterns
+        for x in range(width):
+            for y in range(height):
+                # Base cycle value from the cycle buffer
+                cycle_value = self.intensity_cycle_buffer[x]
+                
+                # Add spatial variation
+                spatial_factor = np.sin((y / height) * np.pi) * 0.3 + 0.7
+                
+                # Calculate final intensity
+                final_intensity = cycle_value * spatial_factor * current_intensity
+                
+                # Color mapping based on intensity level
+                if current_intensity < 0.2:
+                    # Low intensity - cool blue/green
+                    background[y, x] = [0, final_intensity * 0.3, final_intensity * 0.6, final_intensity * 0.4]
+                elif current_intensity < 0.5:
+                    # Medium intensity - warm yellow/orange
+                    background[y, x] = [final_intensity * 0.6, final_intensity * 0.4, 0, final_intensity * 0.3]
+                else:
+                    # High intensity - hot red/pink
+                    background[y, x] = [final_intensity * 0.8, 0, final_intensity * 0.4, final_intensity * 0.5]
+        
+        return background
+    
+    def get_intensity_description(self):
+        """Generate description of current intensity state"""
+        if not self.intensity_history:
+            return "No Audio", "gray"
+        
+        avg_intensity = np.mean(self.intensity_history)
+        cycle_strength = np.std(self.intensity_cycle_buffer) * 10  # Amplify for visibility
+        
+        if avg_intensity < 0.1:
+            return f"Silence (Cycle: {cycle_strength:.1f})", "#404040"
+        elif avg_intensity < 0.3:
+            return f"Low Intensity (Cycle: {cycle_strength:.1f})", "#0066CC"
+        elif avg_intensity < 0.6:
+            return f"Medium Intensity (Cycle: {cycle_strength:.1f})", "#FF6600"
+        else:
+            return f"High Intensity (Cycle: {cycle_strength:.1f})", "#CC0066"
+
     def audio_callback(self, in_data, frame_count, time_info, status):
         try:
             # Convert int16 to float32
@@ -583,6 +864,12 @@ class RealTimePitchogramWhisper:
             
             self.audio_chunk_counter += 1
 
+            # Calculate loudness metrics and update intensity cycle
+            rms, peak, loudness = self.calculate_loudness_metrics(audio_float)
+            self.update_intensity_cycle(loudness, peak)
+            
+            # Update sound ring with current intensity
+            self.sound_ring.update_intensity(self.current_sound_intensity)
             
             # Add to processing queue
             try:
@@ -622,8 +909,7 @@ class RealTimePitchogramWhisper:
                 self.visualization_handler.get_vowel_embedding(nap_output)
                 pitch_frame = self.visualization_handler.run_frame(sai_output)
 
-                # Changed: Update temporal buffer by shifting left and adding new column on the right
-                # This creates the left-to-right scrolling effect
+                # Update temporal buffer by shifting left and adding new column on the right
                 self.visualization_handler.img[:, :-1] = self.visualization_handler.img[:, 1:]
                 self.visualization_handler.draw_column(self.visualization_handler.img[:, -1])
 
@@ -638,7 +924,6 @@ class RealTimePitchogramWhisper:
                 continue
             except Exception as e:
                 print(f"Audio processing error: {e}")
-                raise e
                 continue
 
     def whisper_processing_loop(self):
@@ -658,12 +943,6 @@ class RealTimePitchogramWhisper:
                 buffer_condition = buffer_size >= int(self.sample_rate * 1.0)  # At least 1 second of audio
                 
                 should_process = time_condition and buffer_condition
-                
-                if self.debug and self.audio_chunk_counter % 100 == 0:
-                    print(f"DEBUG: Buffer size: {buffer_size/self.sample_rate:.1f}s, "
-                          f"Energy: {audio_energy:.6f}, "
-                          f"Should process: {should_process}, "
-                          f"Time since last: {current_time - self.last_whisper_time:.1f}s")
                 
                 if should_process:
                     with self.whisper_buffer_lock:
@@ -738,7 +1017,7 @@ class RealTimePitchogramWhisper:
             print(f"Whisper chunk processing error: {e}")
 
     def _analyze_pitch_content(self):
-        # Changed: Analyze the rightmost column (latest data) instead of the last row
+        # Analyze the rightmost column (latest data) instead of the last row
         current_frame = self.visualization_handler.img[:, -1, :]
         # Get the intensity by looking at the brightest pixel in the latest column
         intensities = np.mean(current_frame, axis=1)  # Average RGB values for each frequency bin
@@ -759,31 +1038,62 @@ class RealTimePitchogramWhisper:
             self.im.set_data(self.visualization_handler.img)
             self.im.set_clim(vmin=0, vmax=max(1, min(255, current_max * 1.3)))
             
+            # Update intensity background
+            intensity_bg = self.generate_intensity_background()
+            self.intensity_background.set_data(intensity_bg)
+            
+            # Update and animate sound ring
+            self.sound_ring.animate_step()
+            self.sound_ring.draw_rings(self.ax, self.current_sound_intensity)
+            
             # Update pitch analysis
             self.pitch_text.set_text(self._analyze_pitch_content())
             
-            # Update transcription
+            # Update intensity description
+            intensity_desc, intensity_color = self.get_intensity_description()
+            self.intensity_text.set_text(intensity_desc)
+            self.intensity_text.set_color(intensity_color)
+            
+            # Update transcription with enhanced center display
             transcription_text = self.whisper_handler.get_display_text()
             if not transcription_text:
-                transcription_text = "Listening... (speak into microphone)"
+                transcription_text = "🎤 Listening...\nSpeak into microphone"
+            
+            # Make text wrap nicely for center display
+            if len(transcription_text) > 50:
+                # Split long text into multiple lines for better center display
+                words = transcription_text.split()
+                lines = []
+                current_line = []
+                for word in words:
+                    current_line.append(word)
+                    if len(' '.join(current_line)) > 40:
+                        lines.append(' '.join(current_line[:-1]))
+                        current_line = [word]
+                if current_line:
+                    lines.append(' '.join(current_line))
+                transcription_text = '\n'.join(lines)
+            
             self.transcription_text.set_text(transcription_text)
+            
+            # Dynamic background color based on intensity
+            if self.intensity_history:
+                avg_intensity = np.mean(self.intensity_history)
+                # Subtle background color change
+                if avg_intensity > 0.6:
+                    self.ax.set_facecolor((0.1, 0.0, 0.1))  # Dark red tint for high intensity
+                elif avg_intensity > 0.3:
+                    self.ax.set_facecolor((0.1, 0.05, 0.0))  # Dark orange tint for medium
+                else:
+                    self.ax.set_facecolor('black')  # Pure black for low intensity
 
-            # Update debug info
-            if self.debug:
-                with self.whisper_buffer_lock:
-                    buffer_seconds = len(self.whisper_audio_buffer) / self.sample_rate
-                current_energy = np.mean(np.square(self.audio_buffer)) if len(self.audio_buffer) > 0 else 0
-                debug_info = f"Buffer: {buffer_seconds:.1f}s | Energy: {current_energy:.4f} | Threshold: {self.energy_threshold:.4f}"
-                self.debug_text.set_text(debug_info)
-            
-            
         except Exception as e:
             print(f"Visualization update error: {e}")
         
-        return [self.im, self.pitch_text, self.transcription_text, self.debug_text]
+        return [self.im, self.intensity_background, self.pitch_text, self.intensity_text,
+                self.transcription_text, self.debug_text, self.ring_intensity_text]
 
     def start(self):
-        
         # Initialize PyAudio
         self.p = pyaudio.PyAudio()
         
@@ -837,10 +1147,7 @@ class RealTimePitchogramWhisper:
         
         # Start audio stream
         self.stream.start_stream()
-        print("System started. Speak into the microphone. Press Ctrl+C to stop.")
-        print("Debug mode enabled - watch the console for detailed information.")
-        print("Pitchogram now flows from left to right - newest audio on the right side.")
-        
+                
         # Start visualization
         self.animation = animation.FuncAnimation(
             self.fig, self.update_visualization, interval=50, blit=False,
