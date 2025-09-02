@@ -439,30 +439,35 @@ class DualSAIProcessor:
         
         try:
             # Convert audio to int16 for playback
-            playback_audio = (self.audio_data * 32767).astype(np.int16)
+            self.playback_audio = (self.audio_data * 32767).astype(np.int16)
             
             def playback_callback(in_data, frame_count, time_info, status):
                 try:
                     if not self.is_playing or self.playback_paused:
                         return (np.zeros(frame_count, dtype=np.int16).tobytes(), pyaudio.paContinue)
                     
-                    if self.playback_position >= len(playback_audio):
+                    # Handle end of file
+                    if self.playback_position >= len(self.playback_audio):
                         if self.loop_audio:
                             self.playback_position = 0
+                            print("Audio playback looped")
                         else:
                             self.is_playing = False
-                            self.btn_play.label.set_text('▶ Play')
-                            self.btn_play.color = 'lightgreen'
+                            self.playback_paused = False
+                            # Update button on main thread
+                            self.fig.canvas.mpl_connect('idle_event', lambda event: self._update_play_button_stopped())
                             return (np.zeros(frame_count, dtype=np.int16).tobytes(), pyaudio.paComplete)
                     
-                    end_pos = min(self.playback_position + frame_count, len(playback_audio))
-                    chunk = playback_audio[self.playback_position:end_pos]
+                    # Get audio chunk
+                    end_pos = min(self.playback_position + frame_count, len(self.playback_audio))
+                    chunk = self.playback_audio[self.playback_position:end_pos]
                     
+                    # Handle partial chunks (end of file)
                     if len(chunk) < frame_count:
-                        if self.loop_audio and len(playback_audio) > 0:
+                        if self.loop_audio and len(self.playback_audio) > 0:
                             # Fill remainder with beginning of file
                             remaining = frame_count - len(chunk)
-                            loop_chunk = playback_audio[:min(remaining, len(playback_audio))]
+                            loop_chunk = self.playback_audio[:min(remaining, len(self.playback_audio))]
                             chunk = np.concatenate([chunk, loop_chunk])
                             self.playback_position = len(loop_chunk)
                         else:
@@ -472,25 +477,35 @@ class DualSAIProcessor:
                     else:
                         self.playback_position = end_pos
                     
-                    # Apply playback speed (simple resampling)
+                    # Apply playback speed by simple decimation/interpolation
                     if self.playback_speed != 1.0:
-                        # This is a simple approach - for better quality, use librosa
-                        indices = np.arange(0, len(chunk), self.playback_speed).astype(int)
-                        indices = indices[indices < len(chunk)]
-                        if len(indices) > 0:
-                            chunk = chunk[indices]
+                        if self.playback_speed > 1.0:
+                            # Speed up: skip samples
+                            step = int(self.playback_speed)
+                            chunk = chunk[::step]
+                        else:
+                            # Slow down: repeat samples
+                            repeat_factor = int(1.0 / self.playback_speed)
+                            chunk = np.repeat(chunk, repeat_factor)
                         
-                        # Pad or truncate to frame_count
+                        # Ensure correct output size
                         if len(chunk) < frame_count:
                             chunk = np.pad(chunk, (0, frame_count - len(chunk)), 'constant')
                         else:
                             chunk = chunk[:frame_count]
                     
-                    return (chunk.tobytes(), pyaudio.paContinue)
+                    return (chunk.astype(np.int16).tobytes(), pyaudio.paContinue)
                     
                 except Exception as e:
                     print(f"Playback callback error: {e}")
-                    return (np.zeros(frame_count, dtype=np.int16).tobytes(), pyaudio.paComplete)
+                    return (np.zeros(frame_count, dtype=np.int16).tobytes(), pyaudio.paContinue)
+            
+            # Close existing stream if it exists
+            if hasattr(self, 'playback_stream') and self.playback_stream:
+                try:
+                    self.playback_stream.close()
+                except:
+                    pass
             
             self.playback_stream = self.p.open(
                 format=pyaudio.paInt16,
@@ -506,7 +521,159 @@ class DualSAIProcessor:
             
         except Exception as e:
             print(f"Failed to setup audio playback: {e}")
+            import traceback
+            traceback.print_exc()
             self.enable_audio_playback = False
+
+    def _update_play_button_stopped(self):
+        """Update play button when playback stops (called from main thread)"""
+        try:
+            self.btn_play.label.set_text('▶')
+            self.btn_play.color = (0, 1, 0.4, 0.8)
+            self.fig.canvas.draw_idle()
+        except:
+            pass
+
+    def start_playback(self):
+        """Start audio playback"""
+        if self.audio_data is None:
+            print("No audio file loaded")
+            return
+            
+        try:
+            # Setup playback stream if needed
+            if not hasattr(self, 'playback_stream') or self.playback_stream is None:
+                self.setup_audio_playback()
+            
+            if self.playback_stream:
+                # Start the stream if it's not active
+                if not self.playback_stream.is_active():
+                    self.playback_stream.start_stream()
+                    print("Playback stream started")
+                
+                self.is_playing = True
+                self.playback_paused = False
+                self.btn_play.label.set_text('⏸')
+                self.btn_play.color = (1, 0.8, 0, 0.8)  # Orange when playing
+                print(f"Audio playback started at position {self.playback_position}")
+                
+                # Force GUI update
+                try:
+                    self.fig.canvas.draw_idle()
+                except:
+                    pass
+            
+        except Exception as e:
+            print(f"Failed to start playback: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def pause_playback(self):
+        """Pause audio playback"""
+        try:
+            if self.playback_stream and self.is_playing:
+                self.is_playing = False
+                self.playback_paused = True
+                self.btn_play.label.set_text('▶')
+                self.btn_play.color = (0, 1, 0.4, 0.8)  # Green when paused
+                print(f"Audio playback paused at position {self.playback_position}")
+                
+                # Force GUI update
+                try:
+                    self.fig.canvas.draw_idle()
+                except:
+                    pass
+        except Exception as e:
+            print(f"Failed to pause playback: {e}")
+
+    def stop_playback(self, event):
+        """Stop audio playback and reset position"""
+        try:
+            if self.playback_stream:
+                self.is_playing = False
+                self.playback_paused = False
+                self.playback_position = 0
+                self.btn_play.label.set_text('▶')
+                self.btn_play.color = (0, 1, 0.4, 0.8)  # Green when stopped
+                print("Audio playback stopped and reset")
+                
+                # Force GUI update
+                try:
+                    self.fig.canvas.draw_idle()
+                except:
+                    pass
+        except Exception as e:
+            print(f"Failed to stop playback: {e}")
+
+    def increase_speed(self, event):
+        """Increase playback speed"""
+        old_speed = self.playback_speed
+        self.playback_speed = min(5.0, self.playback_speed + 0.5)
+        if self.playback_speed != old_speed:
+            self.speed_text.set_text(f'{self.playback_speed:.1f}x')
+            print(f"Speed increased to {self.playback_speed:.1f}x")
+            
+            # Restart playback with new speed if currently playing
+            if self.is_playing and self.enable_audio_playback:
+                was_playing = True
+                self.pause_playback()
+                # Recreate the playback stream with new speed
+                self.setup_audio_playback()
+                if was_playing:
+                    self.start_playback()
+            
+            # Force GUI update
+            try:
+                self.fig.canvas.draw_idle()
+            except:
+                pass
+
+    def decrease_speed(self, event):
+        """Decrease playback speed"""
+        old_speed = self.playback_speed
+        self.playback_speed = max(0.25, self.playback_speed - 0.5)
+        if self.playback_speed != old_speed:
+            self.speed_text.set_text(f'{self.playback_speed:.1f}x')
+            print(f"Speed decreased to {self.playback_speed:.1f}x")
+            
+            # Restart playback with new speed if currently playing
+            if self.is_playing and self.enable_audio_playback:
+                was_playing = True
+                self.pause_playback()
+                # Recreate the playback stream with new speed
+                self.setup_audio_playback()
+                if was_playing:
+                    self.start_playback()
+            
+            # Force GUI update
+            try:
+                self.fig.canvas.draw_idle()
+            except:
+                pass
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.running = False
+        try:
+            if hasattr(self, 'stream') and self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+        except:
+            pass
+        
+        try:
+            if hasattr(self, 'playback_stream') and self.playback_stream:
+                if self.playback_stream.is_active():
+                    self.playback_stream.stop_stream()
+                self.playback_stream.close()
+        except:
+            pass
+        
+        try:
+            if hasattr(self, 'p') and self.p:
+                self.p.terminate()
+        except:
+            pass
 
     def _load_audio_file(self):
         """Load the audio file for file processing"""
@@ -1439,17 +1606,6 @@ if __name__ == "__main__":
     # Example usage when run directly
     import sys
     if len(sys.argv) == 1:
-        print("Dual SAI Visualization System")
-        print("Usage examples:")
-        print("  python script.py --debug")
-        print("  python script.py --audio-file audio.wav --debug")
-        print("  python script.py --audio-file audio.wav --speed 0.5 --whisper-model base")
-        print("  python script.py --audio-file audio.wav --no-loop  # Disable looping")
-        print("  python script.py --audio-file audio.wav --no-cache # Disable caching")
-        print("  python script.py --audio-file audio.wav            # Uses default 3.0x speed")
-        print("  python script.py --audio-file audio.wav --enable-playback  # With sound")
-        print("Run with --help for all options")
-        print("\nStarting with default settings (real-time only)...")
         processor = DualSAIProcessor(debug=True, loop_audio=True, enable_caching=True, playback_speed=3.0)
         try:
             processor.start()
