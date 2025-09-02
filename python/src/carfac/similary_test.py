@@ -570,6 +570,14 @@ class DualSAIProcessor:
         self.similarity_display_history = []
         self.max_similarity_display_history = 200
         
+        # Recording functionality
+        self.is_recording = False
+        self.recorded_audio = []
+        self.recording_start_time = 0
+        self.recording_duration = 5.0  # Default recording duration in seconds
+        self.last_score_percentage = 0.0
+        self.score_history = []
+        
         # Audio playback setup
         self.playback_stream = None
         self.playback_position = 0
@@ -972,9 +980,16 @@ class DualSAIProcessor:
             self.enable_audio_playback = False
 
     def audio_callback(self, in_data, frame_count, time_info, status):
-        """Real-time audio callback"""
+        """Real-time audio callback with recording capability"""
         try:
             audio_float = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
+            
+            # Handle recording
+            if self.is_recording:
+                self.recorded_audio.extend(audio_float)
+                # Check if recording duration exceeded
+                if len(self.recorded_audio) >= int(self.recording_duration * self.sample_rate):
+                    self.stop_recording()
             
             try:
                 self.audio_queue.put_nowait(audio_float)
@@ -998,6 +1013,171 @@ class DualSAIProcessor:
             print(f"Audio callback error: {e}")
         
         return (in_data, pyaudio.paContinue)
+
+    def start_recording(self, event=None):
+        """Start recording user's speech"""
+        if self.is_recording:
+            self.stop_recording()
+            return
+        
+        self.is_recording = True
+        self.recorded_audio = []
+        self.recording_start_time = time.time()
+        
+        # Update button appearance
+        self.btn_record.label.set_text('⏹ REC')
+        self.btn_record.color = (1, 0, 0, 0.8)  # Red when recording
+        
+        print(f"Recording started... Speak for {self.recording_duration} seconds")
+        
+        # Start countdown thread
+        threading.Thread(target=self._recording_countdown, daemon=True).start()
+
+    def stop_recording(self, event=None):
+        """Stop recording and calculate similarity score"""
+        if not self.is_recording:
+            return
+        
+        self.is_recording = False
+        
+        # Update button appearance
+        self.btn_record.label.set_text('🎤 REC')
+        self.btn_record.color = (0, 0.8, 1, 0.8)  # Blue when not recording
+        
+        if len(self.recorded_audio) > 0:
+            # Process recorded audio and calculate score
+            threading.Thread(target=self._process_recorded_audio, daemon=True).start()
+        else:
+            print("No audio recorded")
+
+    def _recording_countdown(self):
+        """Handle recording countdown"""
+        start_time = time.time()
+        while self.is_recording and (time.time() - start_time) < self.recording_duration:
+            remaining = self.recording_duration - (time.time() - start_time)
+            if remaining > 0:
+                time.sleep(0.1)
+        
+        if self.is_recording:
+            self.stop_recording()
+
+    def _process_recorded_audio(self):
+        """Process recorded audio and calculate similarity percentage"""
+        try:
+            print("Processing recorded audio...")
+            
+            # Convert to numpy array and ensure correct format
+            recorded_array = np.array(self.recorded_audio, dtype=np.float32)
+            
+            if len(recorded_array) < self.sample_rate * 0.5:  # Less than 0.5 seconds
+                print("Recording too short for analysis")
+                return
+            
+            # Normalize audio
+            if np.max(np.abs(recorded_array)) > 0:
+                recorded_array = recorded_array / np.max(np.abs(recorded_array)) * 0.9
+            
+            # Process through CARFAC and SAI
+            temp_carfac = RealCARFACProcessor(fs=self.sample_rate)
+            temp_sai = sai.SAI(self.sai_params)
+            
+            # Split into chunks and process
+            chunk_size = self.chunk_size
+            recorded_sai_frames = []
+            
+            for i in range(0, len(recorded_array), chunk_size):
+                chunk = recorded_array[i:i+chunk_size]
+                if len(chunk) < chunk_size:
+                    chunk = np.pad(chunk, (0, chunk_size - len(chunk)), 'constant')
+                
+                # Process chunk
+                nap_output = temp_carfac.process_chunk(chunk)
+                sai_output = temp_sai.RunSegment(nap_output)
+                recorded_sai_frames.append(sai_output)
+            
+            # Calculate similarity with current file position
+            if self.audio_data is not None and len(recorded_sai_frames) > 0:
+                # Get corresponding file frames (around current position)
+                file_frames = []
+                current_chunk = self.get_current_chunk_index()
+                
+                # Get frames from cache or calculate
+                for offset in range(-2, len(recorded_sai_frames) + 2):
+                    chunk_idx = max(0, current_chunk + offset)
+                    
+                    if chunk_idx < len(self.sai_cache):
+                        cached = self.get_cached_sai_result(chunk_idx)
+                        if cached:
+                            file_frames.append(cached['sai_output'])
+                    
+                    if len(file_frames) >= len(recorded_sai_frames):
+                        break
+                
+                # Calculate frame-by-frame similarities
+                similarities = []
+                for i, rec_frame in enumerate(recorded_sai_frames):
+                    if i < len(file_frames):
+                        sim = self.similarity_calculator._cosine_similarity(rec_frame, file_frames[i])
+                        similarities.append(sim)
+                
+                if similarities:
+                    # Calculate percentage score
+                    avg_similarity = np.mean(similarities)
+                    max_similarity = np.max(similarities)
+                    
+                    # Convert to percentage (0-100%)
+                    percentage_score = avg_similarity * 100
+                    max_percentage = max_similarity * 100
+                    
+                    self.last_score_percentage = percentage_score
+                    self.score_history.append(percentage_score)
+                    
+                    # Keep only last 10 scores
+                    if len(self.score_history) > 10:
+                        self.score_history = self.score_history[-10:]
+                    
+                    # Provide feedback
+                    self._provide_pronunciation_feedback(percentage_score, max_percentage)
+                    
+                    print(f"Pronunciation Score: {percentage_score:.1f}% (Peak: {max_percentage:.1f}%)")
+                else:
+                    print("Could not calculate similarity - no matching file frames")
+            else:
+                print("No file loaded or recording too short for comparison")
+                
+        except Exception as e:
+            print(f"Error processing recorded audio: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _provide_pronunciation_feedback(self, score, peak_score):
+        """Provide user feedback based on pronunciation score"""
+        if score >= 85:
+            feedback = "Excellent pronunciation!"
+            color = 'lime'
+        elif score >= 70:
+            feedback = "Good pronunciation!"
+            color = 'green'
+        elif score >= 55:
+            feedback = "Fair pronunciation - keep practicing!"
+            color = 'orange'
+        elif score >= 40:
+            feedback = "Needs improvement - try again!"
+            color = 'yellow'
+        else:
+            feedback = "Keep practicing - you can do better!"
+            color = 'red'
+        
+        # Update the score display
+        score_text = f"Score: {score:.1f}% - {feedback}"
+        if hasattr(self, 'score_display'):
+            self.score_display.set_text(score_text)
+            self.score_display.set_color(color)
+
+    def set_recording_duration(self, duration):
+        """Set the recording duration in seconds"""
+        self.recording_duration = max(1.0, min(10.0, duration))
+        print(f"Recording duration set to {self.recording_duration:.1f} seconds")
 
     def process_realtime_audio(self):
         """Process real-time audio stream with controlled rate and similarity tracking"""
@@ -1066,10 +1246,10 @@ class DualSAIProcessor:
 
     def _setup_dual_visualization(self):
         """Setup dual screen visualization with interactive controls and similarity display"""
-        self.fig = plt.figure(figsize=(20, 16))
+        self.fig = plt.figure(figsize=(20, 18))  # Increased height for more controls
         
-        # Create layout with similarity plot
-        gs = self.fig.add_gridspec(16, 2, height_ratios=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.8, 0.3, 0.3, 0.3, 0.2, 0.2])
+        # Create layout with similarity plot and score display
+        gs = self.fig.add_gridspec(18, 2, height_ratios=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.8, 0.3, 0.3, 0.3, 0.3, 0.3, 0.2, 0.2])
         
         self.ax_realtime = self.fig.add_subplot(gs[0:10, 0])
         self.ax_file = self.fig.add_subplot(gs[0:10, 1])
@@ -1088,12 +1268,33 @@ class DualSAIProcessor:
         self.ax_similarity.legend(loc='upper right')
         self.ax_similarity.grid(True, alpha=0.3)
         
+        # Score display area
+        self.ax_score = self.fig.add_subplot(gs[11, :])
+        self.ax_score.set_facecolor('black')
+        self.ax_score.set_title("Pronunciation Score", color='white', fontsize=12)
+        self.ax_score.set_xlim(0, 1)
+        self.ax_score.set_ylim(0, 1)
+        self.ax_score.axis('off')
+        
+        # Score display text
+        self.score_display = self.ax_score.text(
+            0.5, 0.5, 'Press Record to test pronunciation', 
+            transform=self.ax_score.transAxes,
+            horizontalalignment='center', verticalalignment='center',
+            fontsize=14, color='white', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8)
+        )
+        
         # Control buttons area
-        self.ax_controls = self.fig.add_subplot(gs[11:13, :])
+        self.ax_controls = self.fig.add_subplot(gs[12:14, :])
         self.ax_controls.axis('off')
         
+        # Recording controls area
+        self.ax_record_controls = self.fig.add_subplot(gs[14:15, :])
+        self.ax_record_controls.axis('off')
+        
         # Similarity info display
-        self.ax_sim_info = self.fig.add_subplot(gs[13, :])
+        self.ax_sim_info = self.fig.add_subplot(gs[15, :])
         self.ax_sim_info.axis('off')
         
         # Enhanced colormap
@@ -1115,6 +1316,186 @@ class DualSAIProcessor:
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, 200, 0, self.vis_file.output.shape[0]]
         )
+        file_title = f"File SAI: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file loaded'}"
+        if self.loop_audio:
+            file_title += " (LOOPING)"
+        self.ax_file.set_title(file_title, color='white', fontsize=14, pad=20)
+        self.ax_file.axis('off')
+        
+        # Add text overlays for each side
+        self.transcription_realtime = self.ax_realtime.text(
+            0.02, 0.02, '', transform=self.ax_realtime.transAxes,
+            verticalalignment='bottom', fontsize=10, color='lime', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+        )
+        
+        self.transcription_file = self.ax_file.text(
+            0.02, 0.02, '', transform=self.ax_file.transAxes,
+            verticalalignment='bottom', fontsize=10, color='cyan', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+        )
+        
+        # Progress indicator for file
+        self.progress_file = self.ax_file.text(
+            0.02, 0.98, '', transform=self.ax_file.transAxes,
+            verticalalignment='top', fontsize=10, color='yellow', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+        )
+        
+        # Status indicator for real-time
+        self.status_realtime = self.ax_realtime.text(
+            0.02, 0.98, '', transform=self.ax_realtime.transAxes,
+            verticalalignment='top', fontsize=10, color='white', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+        )
+        
+        # Similarity info text
+        self.similarity_info = self.ax_sim_info.text(
+            0.5, 0.5, '', transform=self.ax_sim_info.transAxes,
+            horizontalalignment='center', verticalalignment='center',
+            fontsize=11, color='white', weight='bold',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8)
+        )
+        
+        # Setup control buttons
+        self._setup_control_buttons()
+        
+        plt.tight_layout()
+        self.fig.patch.set_facecolor('black')
+
+    def _setup_control_buttons(self):
+        """Setup modern, attractive control buttons"""
+        button_height = 0.04
+        button_width = 0.06
+        button_y = 0.01
+        spacing = 0.08
+        start_x = 0.15  # Shifted left to make room for record button
+        
+        # Record button (new!)
+        self.ax_record = plt.axes([start_x, button_y, button_width, button_height], 
+                                 facecolor='none', frameon=False)
+        self.btn_record = Button(self.ax_record, '🎤 REC', 
+                                color=(0, 0.8, 1, 0.8), 
+                                hovercolor=(0, 0.8, 1, 1.0))
+        self.btn_record.label.set_fontsize(10)
+        self.btn_record.label.set_color('white')
+        self.btn_record.label.set_weight('bold')
+        self.btn_record.on_clicked(self.start_recording)
+        
+        # Play/Pause button
+        self.ax_play = plt.axes([start_x + spacing, button_y, button_width, button_height], 
+                               facecolor='none', frameon=False)
+        self.btn_play = Button(self.ax_play, '▶', 
+                              color=(0, 1, 0.4, 0.8), 
+                              hovercolor=(0, 1, 0.4, 1.0))
+        self.btn_play.label.set_fontsize(16)
+        self.btn_play.label.set_color('white')
+        self.btn_play.label.set_weight('bold')
+        self.btn_play.on_clicked(self.toggle_playback)
+        
+        # Stop button
+        self.ax_stop = plt.axes([start_x + spacing*2, button_y, button_width, button_height], 
+                               facecolor='none', frameon=False)
+        self.btn_stop = Button(self.ax_stop, '⏹', 
+                              color=(1, 0.4, 0.4, 0.8), 
+                              hovercolor=(1, 0.4, 0.4, 1.0))
+        self.btn_stop.label.set_fontsize(16)
+        self.btn_stop.label.set_color('white')
+        self.btn_stop.label.set_weight('bold')
+        self.btn_stop.on_clicked(self.stop_playback)
+        
+        # Speed down button
+        self.ax_speed_down = plt.axes([start_x + spacing*3, button_y, button_width, button_height], 
+                                     facecolor='none', frameon=False)
+        self.btn_speed_down = Button(self.ax_speed_down, '◀◀', 
+                                    color=(0.4, 0.6, 1, 0.8), 
+                                    hovercolor=(0.4, 0.6, 1, 1.0))
+        self.btn_speed_down.label.set_fontsize(12)
+        self.btn_speed_down.label.set_color('white')
+        self.btn_speed_down.label.set_weight('bold')
+        self.btn_speed_down.on_clicked(self.decrease_speed)
+        
+        # Speed indicator (non-clickable)
+        self.ax_speed_display = plt.axes([start_x + spacing*4, button_y, button_width, button_height], 
+                                        facecolor='none', frameon=False)
+        self.speed_text = self.ax_speed_display.text(0.5, 0.5, f'{self.playback_speed:.1f}x', 
+                                                    ha='center', va='center', 
+                                                    fontsize=12, color='white', weight='bold',
+                                                    bbox=dict(boxstyle='round,pad=0.2', 
+                                                             facecolor=(1, 1, 1, 0.1), 
+                                                             edgecolor='white', alpha=0.8))
+        self.ax_speed_display.set_xlim(0, 1)
+        self.ax_speed_display.set_ylim(0, 1)
+        self.ax_speed_display.axis('off')
+        
+        # Speed up button
+        self.ax_speed_up = plt.axes([start_x + spacing*5, button_y, button_width, button_height], 
+                                   facecolor='none', frameon=False)
+        self.btn_speed_up = Button(self.ax_speed_up, '▶▶', 
+                                  color=(0.4, 0.6, 1, 0.8), 
+                                  hovercolor=(0.4, 0.6, 1, 1.0))
+        self.btn_speed_up.label.set_fontsize(12)
+        self.btn_speed_up.label.set_color('white')
+        self.btn_speed_up.label.set_weight('bold')
+        self.btn_speed_up.on_clicked(self.increase_speed)
+        
+        # Loop toggle button
+        self.ax_loop = plt.axes([start_x + spacing*6, button_y, button_width, button_height], 
+                               facecolor='none', frameon=False)
+        loop_symbol = '🔄' if self.loop_audio else '↗'
+        loop_color = (1, 0.8, 0, 0.8) if self.loop_audio else (0.5, 0.5, 0.5, 0.6)
+        hover_color = (1, 0.8, 0, 1.0) if self.loop_audio else (0.5, 0.5, 0.5, 0.8)
+        self.btn_loop = Button(self.ax_loop, loop_symbol, 
+                              color=loop_color, 
+                              hovercolor=hover_color)
+        self.btn_loop.label.set_fontsize(14)
+        self.btn_loop.label.set_color('white')
+        self.btn_loop.on_clicked(self.toggle_loop)
+        
+        # Recording duration controls (on second row)
+        record_button_y = button_y + 0.06
+        
+        # Duration down button
+        self.ax_duration_down = plt.axes([start_x, record_button_y, button_width*0.8, button_height*0.8], 
+                                        facecolor='none', frameon=False)
+        self.btn_duration_down = Button(self.ax_duration_down, '-', 
+                                       color=(0.8, 0.8, 0.8, 0.6), 
+                                       hovercolor=(0.8, 0.8, 0.8, 0.8))
+        self.btn_duration_down.label.set_fontsize(14)
+        self.btn_duration_down.label.set_color('white')
+        self.btn_duration_down.label.set_weight('bold')
+        self.btn_duration_down.on_clicked(lambda x: self.change_recording_duration(-1))
+        
+        # Duration display
+        self.ax_duration_display = plt.axes([start_x + spacing*0.8, record_button_y, button_width, button_height*0.8], 
+                                           facecolor='none', frameon=False)
+        self.duration_text = self.ax_duration_display.text(0.5, 0.5, f'{self.recording_duration:.1f}s', 
+                                                          ha='center', va='center', 
+                                                          fontsize=10, color='white', weight='bold',
+                                                          bbox=dict(boxstyle='round,pad=0.2', 
+                                                                   facecolor=(0.2, 0.2, 0.2, 0.8), 
+                                                                   edgecolor='white', alpha=0.8))
+        self.ax_duration_display.set_xlim(0, 1)
+        self.ax_duration_display.set_ylim(0, 1)
+        self.ax_duration_display.axis('off')
+        
+        # Duration up button
+        self.ax_duration_up = plt.axes([start_x + spacing*1.6, record_button_y, button_width*0.8, button_height*0.8], 
+                                      facecolor='none', frameon=False)
+        self.btn_duration_up = Button(self.ax_duration_up, '+', 
+                                     color=(0.8, 0.8, 0.8, 0.6), 
+                                     hovercolor=(0.8, 0.8, 0.8, 0.8))
+        self.btn_duration_up.label.set_fontsize(14)
+        self.btn_duration_up.label.set_color('white')
+        self.btn_duration_up.label.set_weight('bold')
+        self.btn_duration_up.on_clicked(lambda x: self.change_recording_duration(1))
+
+    def change_recording_duration(self, delta):
+        """Change recording duration"""
+        new_duration = self.recording_duration + delta
+        self.recording_duration = max(1.0, min(10.0, new_duration))
+        self.duration_text.set_text(f'{self.recording_duration:.1f}s')
+
         file_title = f"File SAI: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file loaded'}"
         if self.loop_audio:
             file_title += " (LOOPING)"
@@ -1466,15 +1847,363 @@ class DualSAIProcessor:
             # Update status for real-time
             with self.whisper_buffer_lock_realtime:
                 buffer_seconds = len(self.whisper_audio_buffer_realtime) / self.sample_rate
-            status_info = f"Real-time Status\nBuffer: {buffer_seconds:.1f}s"
+            
+            # Add recording status to real-time display
+            if self.is_recording:
+                remaining_time = max(0, self.recording_duration - (time.time() - self.recording_start_time))
+                status_info = f"🔴 RECORDING\nTime left: {remaining_time:.1f}s\nBuffer: {buffer_seconds:.1f}s"
+            else:
+                status_info = f"Real-time Status\nBuffer: {buffer_seconds:.1f}s"
+                if self.score_history:
+                    avg_score = np.mean(self.score_history)
+                    status_info += f"\nAvg Score: {avg_score:.1f}%"
+            
             self.status_realtime.set_text(status_info)
+            
+            # Update score display if we have recent scores
+            if self.score_history:
+                recent_scores = self.score_history[-3:]  # Last 3 scores
+                score_trend = "→"
+                if len(recent_scores) >= 2:
+                    if recent_scores[-1] > recent_scores[-2]:
+                        score_trend = "↗"
+                    elif recent_scores[-1] < recent_scores[-2]:
+                        score_trend = "↘"
+                
+                score_summary = f"Latest: {self.last_score_percentage:.1f}% {score_trend} | "
+                score_summary += f"Best: {max(self.score_history):.1f}% | "
+                score_summary += f"Average: {np.mean(self.score_history):.1f}%"
+                
+                # Color code based on latest score
+                if self.last_score_percentage >= 85:
+                    color = 'lime'
+                elif self.last_score_percentage >= 70:
+                    color = 'lightgreen' 
+                elif self.last_score_percentage >= 55:
+                    color = 'orange'
+                elif self.last_score_percentage >= 40:
+                    color = 'yellow'
+                else:
+                    color = 'lightcoral'
+                
+                if hasattr(self, 'score_display'):
+                    self.score_display.set_text(score_summary)
+                    self.score_display.set_color(color)
             
         except Exception as e:
             print(f"Visualization update error: {e}")
         
         return [self.im_realtime, self.im_file, self.transcription_realtime, 
                 self.transcription_file, self.progress_file, self.status_realtime,
-                self.similarity_line, self.similarity_line_smooth, self.similarity_info]
+                self.similarity_line, self.similarity_line_smooth, self.similarity_info,
+                self.score_display]
+
+    # Enhanced similarity control methods with recording
+    def get_pronunciation_statistics(self):
+        """Get detailed pronunciation statistics"""
+        if not self.score_history:
+            return "No pronunciation attempts recorded yet"
+        
+        stats = {
+            'attempts': len(self.score_history),
+            'latest_score': self.last_score_percentage,
+            'best_score': max(self.score_history),
+            'average_score': np.mean(self.score_history),
+            'improvement': 0.0
+        }
+        
+        if len(self.score_history) >= 2:
+            stats['improvement'] = self.score_history[-1] - self.score_history[0]
+        
+        return stats
+
+    def reset_pronunciation_history(self):
+        """Reset pronunciation score history"""
+        self.score_history.clear()
+        self.last_score_percentage = 0.0
+        if hasattr(self, 'score_display'):
+            self.score_display.set_text('Press Record to test pronunciation')
+            self.score_display.set_color('white')
+        print("Pronunciation history reset")
+
+    def set_similarity_method(self, method):
+        """Change similarity calculation method"""
+        if method in self.similarity_calculator.comparison_methods:
+            self.similarity_method = method
+            print(f"Similarity method changed to: {method}")
+            return True
+        else:
+            available = list(self.similarity_calculator.comparison_methods.keys())
+            print(f"Invalid method. Available methods: {available}")
+            return False
+
+    def reset_similarity_tracking(self):
+        """Reset similarity tracking"""
+        self.similarity_calculator.reset()
+        self.similarity_display_history.clear()
+        print("Similarity tracking reset")
+
+    def get_current_similarity_score(self):
+        """Get current similarity score"""
+        return self.similarity_calculator.get_similarity_stats()
+
+    def check_similarity_threshold(self, threshold=0.8):
+        """Check if similarity exceeds threshold and trigger alert"""
+        stats = self.similarity_calculator.get_similarity_stats()
+        if stats['smoothed'] > threshold:
+            return True, f"High similarity detected: {stats['smoothed']:.3f}"
+        return False, f"Current similarity: {stats['smoothed']:.3f}"
+
+    def list_audio_devices(self):
+        """List available audio input devices"""
+        if self.p is None:
+            self.p = pyaudio.PyAudio()
+        
+        print("\nAvailable audio input devices:")
+        for i in range(self.p.get_device_count()):
+            info = self.p.get_device_info_by_index(i)
+            if info['maxInputChannels'] > 0:
+                print(f"  Device {i}: {info['name']} (Channels: {info['maxInputChannels']})")
+        print()
+
+    def start(self):
+        """Start the dual SAI processor with recording functionality"""
+        print("Starting Dual SAI Pronunciation Trainer with Similarity Scoring...")
+        
+        self.p = pyaudio.PyAudio()
+        
+        if self.debug:
+            self.list_audio_devices()
+        
+        try:
+            self.stream = self.p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self.sample_rate,
+                input=True,
+                frames_per_buffer=self.chunk_size,
+                stream_callback=self.audio_callback,
+                start=False
+            )
+            print(f"Audio stream opened: {self.sample_rate}Hz, {self.chunk_size} frames/buffer")
+        except Exception as e:
+            print(f"Failed to open audio stream: {e}")
+            for i in range(self.p.get_device_count()):
+                try:
+                    info = self.p.get_device_info_by_index(i)
+                    if info['maxInputChannels'] > 0:
+                        print(f"Trying device {i}: {info['name']}")
+                        self.stream = self.p.open(
+                            format=pyaudio.paInt16,
+                            channels=1,
+                            rate=self.sample_rate,
+                            input=True,
+                            input_device_index=i,
+                            frames_per_buffer=self.chunk_size,
+                            stream_callback=self.audio_callback,
+                            start=False
+                        )
+                        print(f"Successfully opened device {i}")
+                        break
+                except:
+                    continue
+            else:
+                print("Failed to open any audio input device - continuing with file only")
+
+        if self.enable_audio_playback:
+            self.setup_audio_playback()
+            self.start_playback()
+
+        self.running = True
+        threading.Thread(target=self.process_realtime_audio, daemon=True).start()
+        
+        if self.stream:
+            self.stream.start_stream()
+            print("Real-time audio processing started")
+        
+        if self.playback_stream and self.enable_audio_playback:
+            print("Audio playback ready (use controls to start)")
+        elif self.audio_data is not None:
+            print("Audio playback available (use Play button)")
+            
+        if self.audio_data is not None:
+            loop_status = "with looping enabled" if self.loop_audio else "single playthrough"
+            cache_status = "with SAI caching" if self.enable_caching else "without caching"
+            playback_status = "with audio playback" if self.enable_audio_playback else "silent"
+            print(f"File processing ready: {self.duration:.2f}s ({loop_status}, {cache_status}, {playback_status})")
+            print(f"Similarity method: {self.similarity_method}")
+            print(f"Recording duration: {self.recording_duration:.1f} seconds")
+        else:
+            print("No audio file loaded - file side will remain static")
+        
+        print("\n=== PRONUNCIATION TRAINER ===")
+        print("1. Left side: Real-time microphone input")
+        print("2. Right side: Audio file processing (reference)")
+        print("3. Middle: Real-time similarity score")
+        print("4. Bottom: Pronunciation score with percentage feedback")
+        print(f"5. Click 🎤 REC button to record {self.recording_duration:.1f}s and get your score!")
+        print("6. Use +/- buttons to adjust recording duration")
+        if self.loop_audio:
+            print("Audio file will loop continuously for practice")
+        print("Press Ctrl+C to stop.")
+        
+        real_time_interval = (self.chunk_size / self.sample_rate) * 1000
+        animation_interval = max(10, int(real_time_interval / max(1, self.playback_speed)))
+        
+        print(f"Animation interval: {animation_interval}ms (chunk duration: {real_time_interval:.1f}ms)")
+        
+        self.animation = animation.FuncAnimation(
+            self.fig, self.update_visualization, interval=animation_interval, 
+            blit=False, cache_frame_data=False
+        )
+        plt.show()
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.running = False
+        self.is_recording = False
+        try:
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+            if self.playback_stream:
+                self.playback_stream.stop_stream()
+                self.playback_stream.close()
+        except:
+            pass
+        try:
+            if self.p:
+                self.p.terminate()
+        except:
+            pass
+
+    def stop(self):
+        """Stop the system"""
+        self.cleanup()
+        plt.close('all')
+        print("Pronunciation trainer stopped.")
+        
+        # Print final statistics
+        if self.score_history:
+            stats = self.get_pronunciation_statistics()
+            print(f"\n=== FINAL STATISTICS ===")
+            print(f"Total attempts: {stats['attempts']}")
+            print(f"Best score: {stats['best_score']:.1f}%")
+            print(f"Average score: {stats['average_score']:.1f}%")
+            print(f"Latest score: {stats['latest_score']:.1f}%")
+            if stats['improvement'] > 0:
+                print(f"Improvement: +{stats['improvement']:.1f}% (Great progress!)")
+            elif stats['improvement'] < 0:
+                print(f"Score change: {stats['improvement']:.1f}% (Keep practicing!)")
+            else:
+                print("Keep practicing to improve your pronunciation!")
+
+    def reset_file_position(self):
+        """Manually reset the file position to the beginning"""
+        self.current_position = 0
+        self.chunks_processed = 0
+        self.loop_count = 0
+        self.cache_hits = 0
+        self.cache_misses = 0
+        print("File position reset to beginning")
+
+    def get_cache_stats(self):
+        """Get current cache statistics"""
+        if not self.enable_caching:
+            return "Caching disabled"
+        
+        total_requests = self.cache_hits + self.cache_misses
+        if total_requests == 0:
+            return "No cache requests yet"
+        
+        hit_rate = (self.cache_hits / total_requests) * 100
+        cache_size = len(self.sai_cache)
+        memory_mb = cache_size * self.chunk_size * 4 / 1024 / 1024
+        
+        return f"Cache: {cache_size} entries, {hit_rate:.1f}% hit rate, ~{memory_mb:.1f}MB"
+
+    def clear_cache(self):
+        """Clear the SAI cache to free memory"""
+        if self.enable_caching:
+            old_size = len(self.sai_cache)
+            self.sai_cache.clear()
+            self.cache_state_snapshots.clear()
+            self.cache_hits = 0
+            self.cache_misses = 0
+            print(f"Cache cleared: {old_size} entries removed")
+
+# ---------------- Main ----------------
+def main():
+    parser = argparse.ArgumentParser(description='Dual SAI Pronunciation Trainer with Recording and Scoring')
+    parser.add_argument('--audio-file', help='Path to audio file for pronunciation reference')
+    parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
+    parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
+    parser.add_argument('--sai-width', type=int, default=400, help='SAI width (default: 400)')
+    parser.add_argument('--whisper-model', default='tiny', help='Whisper model (default: tiny)')
+    parser.add_argument('--whisper-interval', type=float, default=2.0, help='Whisper processing interval in seconds (default: 2.0)')
+    parser.add_argument('--enable-translation', action='store_true', help='Enable translation')
+    parser.add_argument('--from-lang', default='en', help='Source language for translation (default: en)')
+    parser.add_argument('--to-lang', default='zh', help='Target language for translation (default: zh)')
+    parser.add_argument('--speed', type=float, default=3.0, help='File playback speed multiplier (default: 3.0)')
+    parser.add_argument('--no-loop', action='store_true', help='Disable audio file looping (default: looping enabled)')
+    parser.add_argument('--no-cache', action='store_true', help='Disable SAI result caching (default: caching enabled)')
+    parser.add_argument('--enable-playback', action='store_true', help='Enable audio playback of the file (default: silent)')
+    parser.add_argument('--similarity-method', default='cosine', choices=['cosine', 'correlation', 'euclidean', 'spectral'], 
+                        help='Similarity calculation method (default: cosine)')
+    parser.add_argument('--recording-duration', type=float, default=5.0, help='Default recording duration in seconds (default: 5.0)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    
+    args = parser.parse_args()
+    
+    if args.audio_file and not os.path.exists(args.audio_file):
+        print(f"Warning: Audio file '{args.audio_file}' not found")
+        print("Continuing with real-time only mode...")
+        args.audio_file = None
+    
+    try:
+        processor = DualSAIProcessor(
+            audio_file_path=args.audio_file,
+            chunk_size=args.chunk_size,
+            sample_rate=args.sample_rate,
+            sai_width=args.sai_width,
+            whisper_model=args.whisper_model,
+            whisper_interval=args.whisper_interval,
+            enable_translation=args.enable_translation,
+            from_lang=args.from_lang,
+            to_lang=args.to_lang,
+            debug=args.debug,
+            playback_speed=args.speed,
+            loop_audio=not args.no_loop,
+            enable_caching=not args.no_cache,
+            enable_audio_playback=args.enable_playback,
+            similarity_method=args.similarity_method
+        )
+        
+        # Set custom recording duration if specified
+        processor.set_recording_duration(args.recording_duration)
+        
+        processor.start()
+        
+    except KeyboardInterrupt:
+        print("\nProcessing interrupted by user")
+    except Exception as e:
+        print(f"Error in pronunciation trainer: {e}")
+        if args.debug:
+            import traceback
+            traceback.print_exc()
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) == 1:
+        processor = DualSAIProcessor(debug=True, loop_audio=True, enable_caching=True, playback_speed=3.0)
+        try:
+            processor.start()
+        except KeyboardInterrupt:
+            print("\nShutting down...")
+            processor.stop()
+    else:
+        main()
+
 
     # Similarity control methods
     def set_similarity_method(self, method):
