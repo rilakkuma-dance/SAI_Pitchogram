@@ -4,6 +4,7 @@ import pyaudio
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
+## from matplotlib.collections import LineCollection
 from matplotlib.widgets import Button
 import threading
 import queue
@@ -1203,15 +1204,6 @@ class DualSAIWithRecording:
         else:
             print("No reference file loaded - right side will remain static")
         
-        print("\n=== DUAL SAI PRONUNCIATION TRAINER ===")
-        print("1. Left side: Real-time microphone input (your voice)")
-        print("2. Right side: Reference file processing")
-        print("3. Bottom: Pronunciation score comparing recorded vs reference")
-        print(f"4. Click 🎤 REC button to record {self.recording_duration:.1f}s and get your score!")
-        print("5. Use +/- buttons to adjust recording duration")
-        print("Your recorded speech will be compared against the reference file")
-        print("Press Ctrl+C to stop.")
-        
         real_time_interval = (self.chunk_size / self.sample_rate) * 1000
         animation_interval = max(10, int(real_time_interval / max(1, self.playback_speed)))
         
@@ -1321,7 +1313,6 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) == 1:
         print("Dual SAI Pronunciation Trainer")
-        print("Usage: python script.py --audio-file <path_to_reference_file>")
         print("Example: python script.py --audio-file chinese_ma.mp3 --debug")
         sys.exit(1)
     else:
