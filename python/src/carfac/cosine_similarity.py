@@ -1075,7 +1075,6 @@ class DualSAIWithRecording:
                 
                 score_summary = f"Latest: {self.last_score_percentage:.1f}% {score_trend} | "
                 score_summary += f"Best: {max(self.score_history):.1f}% | "
-                score_summary += f"Average: {np.mean(self.score_history):.1f}%"
                 
                 # Color code based on latest score
                 if self.last_score_percentage >= 85:
@@ -1101,8 +1100,6 @@ class DualSAIWithRecording:
                 self.score_display]
 
     def start(self):
-        """Start the dual SAI processor with recording functionality"""
-        print("Starting Dual SAI Pronunciation Trainer...")
         
         self.p = pyaudio.PyAudio()
         
