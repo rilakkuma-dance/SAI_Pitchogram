@@ -874,19 +874,9 @@ class DualSAIWithRecording:
         self.ax_realtime = self.fig.add_subplot(gs[0:10, 0])
         self.ax_file = self.fig.add_subplot(gs[0:10, 1])
         
-        # Similarity plot (spans both columns)
-        self.ax_similarity = self.fig.add_subplot(gs[10, :])
-        self.ax_similarity.set_facecolor('black')
-        self.ax_similarity.set_title("Recording vs Reference Similarity", color='white', fontsize=12)
-        self.ax_similarity.set_ylim(0, 1)
-        self.ax_similarity.set_ylabel("Similarity", color='white')
-        self.ax_similarity.tick_params(colors='white')
-        self.ax_similarity.grid(True, alpha=0.3)
-        
         # Score display area
         self.ax_score = self.fig.add_subplot(gs[11, :])
         self.ax_score.set_facecolor('black')
-        self.ax_score.set_title("Pronunciation Score", color='white', fontsize=12)
         self.ax_score.set_xlim(0, 1)
         self.ax_score.set_ylim(0, 1)
         self.ax_score.axis('off')
@@ -924,10 +914,6 @@ class DualSAIWithRecording:
             interpolation='bilinear', extent=[0, 200, 0, self.vis_file.output.shape[0]]
         )
         file_title = f"Reference File SAI: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file loaded'}"
-        if self.loop_audio:
-            file_title += " (LOOPING)"
-        self.ax_file.set_title(file_title, color='white', fontsize=14, pad=20)
-        self.ax_file.axis('off')
         
         # Add text overlays for each side
         self.transcription_realtime = self.ax_realtime.text(
@@ -1076,56 +1062,7 @@ class DualSAIWithRecording:
             if not transcription_rt:
                 transcription_rt = "Listening... (speak into microphone)"
             self.transcription_realtime.set_text(transcription_rt)
-            
-            # File side shows static info instead of live captioning
-            if self.audio_data is not None:
-                file_info = f"Reference File: {os.path.basename(self.audio_file_path)}"
-                if self.loop_audio:
-                    file_info += f"\nLooping enabled"
-                else:
-                    file_info += f"\nSingle playthrough"
-                file_info += f"\nDuration: {self.duration:.1f}s"
-                file_info += f"\nClick Record to compare your voice"
-            else:
-                file_info = "No reference file loaded"
-            self.transcription_file.set_text(file_info)
-            
-            # Update progress for file (with loop information)
-            if self.audio_data is not None:
-                current_file_position = self.current_position
-                if current_file_position == 0 and self.chunks_processed > 0:
-                    current_file_position = self.total_samples
-                
-                current_time_in_loop = (current_file_position / self.total_samples) * self.duration if self.total_samples > 0 else 0
-                progress_percent = (current_file_position / self.total_samples) * 100 if self.total_samples > 0 else 0
-                
-                total_elapsed = (self.loop_count * self.duration) + current_time_in_loop
-                
-                progress_info = f"File: {current_time_in_loop:.1f}s / {self.duration:.1f}s ({progress_percent:.1f}%)"
-                if self.loop_audio:
-                    progress_info += f"\nLoop #{self.loop_count + 1} | Total: {total_elapsed:.1f}s"
-                progress_info += f"\nSpeed: {self.playback_speed:.1f}x"
-                
-                self.progress_file.set_text(progress_info)
-            else:
-                self.progress_file.set_text("No reference file loaded")
-                
-            # Update status for real-time
-            with self.whisper_buffer_lock_realtime:
-                buffer_seconds = len(self.whisper_audio_buffer_realtime) / self.sample_rate
-            
-            # Add recording status to real-time display
-            if self.is_recording:
-                remaining_time = max(0, self.recording_duration - (time.time() - self.recording_start_time))
-                status_info = f"🔴 RECORDING\nTime left: {remaining_time:.1f}s\nBuffer: {buffer_seconds:.1f}s"
-            else:
-                status_info = f"Real-time Status\nBuffer: {buffer_seconds:.1f}s"
-                if self.score_history:
-                    avg_score = np.mean(self.score_history)
-                    status_info += f"\nAvg Score: {avg_score:.1f}%"
-            
-            self.status_realtime.set_text(status_info)
-            
+                    
             # Update score display if we have recent scores
             if self.score_history:
                 recent_scores = self.score_history[-3:]  # Last 3 scores
@@ -1169,13 +1106,6 @@ class DualSAIWithRecording:
         
         self.p = pyaudio.PyAudio()
         
-        if self.debug:
-            print("\nAvailable audio input devices:")
-            for i in range(self.p.get_device_count()):
-                info = self.p.get_device_info_by_index(i)
-                if info['maxInputChannels'] > 0:
-                    print(f"  Device {i}: {info['name']} (Channels: {info['maxInputChannels']})")
-        
         try:
             self.stream = self.p.open(
                 format=pyaudio.paInt16,
@@ -1197,12 +1127,6 @@ class DualSAIWithRecording:
         if self.stream:
             self.stream.start_stream()
             print("Real-time audio processing started")
-            
-        if self.audio_data is not None:
-            loop_status = "with looping enabled" if self.loop_audio else "single playthrough"
-            print(f"Reference file processing ready: {self.duration:.2f}s ({loop_status})")
-        else:
-            print("No reference file loaded - right side will remain static")
         
         real_time_interval = (self.chunk_size / self.sample_rate) * 1000
         animation_interval = max(10, int(real_time_interval / max(1, self.playback_speed)))
@@ -1235,7 +1159,6 @@ class DualSAIWithRecording:
         """Stop the system"""
         self.cleanup()
         plt.close('all')
-        print("Dual SAI pronunciation trainer stopped.")
         
         # Print final statistics
         if self.score_history:
@@ -1312,8 +1235,6 @@ def main():
 if __name__ == "__main__":
     import sys
     if len(sys.argv) == 1:
-        print("Dual SAI Pronunciation Trainer")
-        print("Example: python script.py --audio-file chinese_ma.mp3 --debug")
         sys.exit(1)
     else:
         sys.exit(main() or 0)
