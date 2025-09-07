@@ -136,7 +136,7 @@ class RealCARFACProcessor:
 
 # ---------------- Whisper Handler ----------------
 class WhisperHandler:
-    def __init__(self, model_name="base", non_english=False, debug=True):
+    def __init__(self, model_name="base", non_english=True, debug=True):
         self.debug = debug
         model = model_name
         if model_name != "large" and not non_english:
