@@ -413,7 +413,7 @@ def create_template():
       <button onclick="runScript('mandarin_mi.py', 'mí (2nd tone)')">mí</button>
       <button onclick="runScript('mandarin_me.py', 'mè (4th tone)')">mè</button>
       <button onclick="runScript('mandarin_ma.py', 'mā (1st tone)')">mā</button>
-      <button onclick="runScript('mandarin_sentence.py', 'Mā zài jiā')">Mā zài jiā</button>
+      <button onclick="runScript('mandarin_xiexie.py', 'Mā zài jiā')">Mā zài jiā</button>
     </div>
     
     <div class="language">

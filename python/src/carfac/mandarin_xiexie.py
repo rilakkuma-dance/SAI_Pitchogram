@@ -1191,7 +1191,7 @@ class DualSAIWithRecording:
 # ---------------- Main ----------------
 def main():
     parser = argparse.ArgumentParser(description='Dual SAI Pronunciation Trainer with Recording')
-    parser.add_argument('--audio-file', default=r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_mi.mp3', 
+    parser.add_argument('--audio-file', default=r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_xiexie.mp3', 
                         help='Path to reference audio file')
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
@@ -1259,5 +1259,5 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         # Run with default audio file if no arguments provided
         sys.argv.append('--audio-file')
-        sys.argv.append(r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_mi.mp3')
+        sys.argv.append(r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_xiexie.mp3')
     sys.exit(main() or 0)

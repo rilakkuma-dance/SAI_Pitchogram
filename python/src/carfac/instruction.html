@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Meaning - Pronunciation Practice System</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Arial', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    line-height: 1.7;
+    color: #333;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+.container { max-width: 700px; margin: 0 auto; }
+.card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 15px;
+    padding: 30px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+h1 { color: #4a5568; margin-bottom: 20px; font-size: 1.8em; text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 10px; }
+.simple-explanation {
+    background: #e8f4fd;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+    border-left: 5px solid #2196f3;
+}
+.color-meaning {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin: 25px 0;
+}
+.color-box {
+    height: 100px;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    text-align: center;
+    font-size: 0.9em;
+}
+.red-color { background: linear-gradient(45deg, #ff6b6b, #ff5252); box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4); }
+.green-color { background: linear-gradient(45deg, #4ecdc4, #26a69a); box-shadow: 0 4px 15px rgba(78, 205, 196, 0.4); }
+.blue-color { background: linear-gradient(45deg, #45b7d1, #2196f3); box-shadow: 0 4px 15px rgba(69, 183, 209, 0.4); }
+
+.tip-box {
+    background: #fff8e1;
+    border: 1px solid #ffcc02;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 20px 0;
+    border-left: 5px solid #ff9800;
+}
+.tip-box h3 { color: #e65100; margin-bottom: 8px; font-size: 1.1em; }
+
+.important-note {
+    background: #ffebee;
+    border: 1px solid #ffcdd2;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 20px 0;
+    border-left: 5px solid #f44336;
+}
+.important-note h3 { color: #c62828; margin-bottom: 8px; }
+
+.usage-guide {
+    background: #f3e5f5;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+}
+.usage-guide h3 { color: #7b1fa2; margin-bottom: 15px; }
+.usage-list { list-style: none; padding-left: 0; }
+.usage-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid #e1bee7;
+    position: relative;
+    padding-left: 25px;
+}
+.usage-list li:before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: #7b1fa2;
+    font-weight: bold;
+}
+
+.simple-example {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 15px 0;
+    border-left: 4px solid #667eea;
+}
+
+.vowel-examples {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    margin: 20px 0;
+}
+
+@media (max-width: 768px) {
+    .color-meaning { grid-template-columns: 1fr; gap: 10px; }
+    .vowel-examples { grid-template-columns: 1fr; }
+    h1 { font-size: 1.5em; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="card">
+    <h1>What Do the Colors Represent?</h1>
+
+    <div class="simple-explanation">
+        <p><strong>In short:</strong><br>
+        This pronunciation practice system analyzes your voice and shows it as colors. The colors represent voice characteristics, and if your colors are similar to the reference voice, your pronunciation is likely similar.</p>
+    </div>
+
+    <div class="color-meaning">
+        <div class="color-box red-color">
+            <strong>Red-ish color</strong><br>
+            Pitch (high or low voice)
+        </div>
+        <div class="color-box green-color">
+            <strong>Green-ish color</strong><br>
+            Resonance / tone quality
+        </div>
+        <div class="color-box blue-color">
+            <strong>Blue-ish color</strong><br>
+            Strength / loudness of voice
+        </div>
+    </div>
+
+    <div class="simple-example">
+        <strong>Example: Chinese "mǔ"</strong><br>
+        If the reference voice shows red, pink, or orange, try to make your voice produce similar colors. It doesn’t have to match exactly—similar shades are enough.
+    </div>
+
+    <div class="vowel-examples">
+        <div class="color-box red-color">
+            <strong>Red-ish color</strong><br>
+            "a-↑" (high pitch) <br>
+            "a-↓" (low pitch)
+        </div>
+        <div class="color-box green-color">
+            <strong>Green-ish color</strong><br>
+            "i" (spread mouth, bright sound) <br>
+            "u" (rounded mouth, muffled sound)
+        </div>
+        <div class="color-box blue-color">
+            <strong>Blue-ish color</strong><br>
+            "e!" (loud) <br>
+            "e..." (soft)
+        </div>
+        <div class="color-box" style="background: linear-gradient(45deg, #9b59b6, #8e44ad); box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4);">
+            <strong>Supplement</strong><br>
+            "o-" (clear) vs "o..." (muffled)
+        </div>
+    </div>
+
+    <div class="usage-guide">
+        <h3>Tips for Use</h3>
+        <ul class="usage-list">
+            <li>Remember the color of the reference voice (on the right)</li>
+            <li>Press the record button to record your own voice</li>
+            <li>Compare your colors with the reference voice</li>
+            <li>Practice repeatedly until your colors are similar</li>
+            <li>Use the score to track improvement</li>
+        </ul>
+    </div>
+
+    <div class="tip-box">
+        <h3>Helpful Info</h3>
+        <p>The same person saying the same word may produce slightly different colors each time. Instead of aiming for an exact match, focus on "roughly similar shades."</p>
+    </div>
+
+    <div class="important-note">
+        <h3>Important Note</h3>
+        <p>Even if colors are similar, it does not guarantee correct pronunciation. This system is a practice aid. If possible, get guidance from native speakers or teachers as well.</p>
+    </div>
+
+    <div class="simple-explanation">
+        <p><strong>Summary:</strong><br>
+        Colors are like a "fingerprint" of your voice. Practice until your color fingerprint is similar to the reference, and your pronunciation will naturally improve. Enjoy practicing and progress step by step!</p>
+    </div>
+
+</div>
+</div>
+</body>
+</html>
