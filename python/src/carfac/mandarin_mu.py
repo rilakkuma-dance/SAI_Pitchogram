@@ -19,6 +19,7 @@ import os
 
 import argostranslate.package
 import argostranslate.translate
+import editdistance
 
 sys.path.append('./jax')
 import jax
@@ -235,6 +236,27 @@ class SimilarityCalculator:
         self.smoothed_similarity = 0.0
         self.max_similarity = 0.0
         self.similarity_history.clear()
+
+class TextSimilarityCalculator:
+    """Calculates text similarity between recorded transcription and reference file transcription"""
+    def __init__(self, file_transcription: str):
+        self.file_transcription = self.preprocess_text(file_transcription)
+        self.last_score_percentage = 0.0
+        self.score_history = []
+
+    def preprocess_text(self, text: str) -> str:
+        """Preprocess text by lowercasing, stripping whitespace, and removing punctuation"""
+        text = text.lower().strip().strip(".,!?")
+        return text
+
+    def compare_texts(self, recorded_text: str) -> int:
+        recorded_text = self.preprocess_text(recorded_text)
+
+        if not recorded_text or not self.file_transcription:
+            return 0
+
+        distance = editdistance.eval(recorded_text, self.file_transcription)
+        return distance
 
 # ---------------- CARFAC Processor ----------------
 class RealCARFACProcessor:
@@ -533,6 +555,9 @@ class DualSAIWithRecording:
         # Initialize similarity calculator
         self.similarity_calculator = SimilarityCalculator(history_size=50, smoothing_factor=0.2)
         self.similarity_method = similarity_method
+
+        # defer this until we have a file transcription
+        self.text_similarity_calculator: TextSimilarityCalculator
         
         # Initialize processing components for both sides
         self.carfac_realtime = RealCARFACProcessor(fs=sample_rate)
@@ -613,6 +638,8 @@ class DualSAIWithRecording:
 
         self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
         self.whisper_file.add_transcription_line(self.file_transcription)
+
+        self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
 
     def get_next_file_chunk(self):
         """Get next chunk from file with looping support"""
@@ -744,10 +771,15 @@ class DualSAIWithRecording:
             transcription = self.whisper_realtime.transcribe_audio(recorded_array, language=self.language)
             if transcription and len(transcription.strip()) > 0:
                 self.whisper_realtime.add_transcription_line(transcription)
-                if transcription != self.file_transcription:
+
+                # Now compare it with file transcription
+                distance = self.text_similarity_calculator.compare_texts(transcription)
+                if distance == 0:
+                    self.transcription_realtime.set_color('lime')
+                elif distance < 3:
                     self.transcription_realtime.set_color('orange')
                 else:
-                    self.transcription_realtime.set_color('lime')
+                    self.transcription_realtime.set_color('red')
             
             # Normalize audio
             if np.max(np.abs(recorded_array)) > 0:
@@ -1279,5 +1311,5 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         # Run with default audio file if no arguments provided
         sys.argv.append('--audio-file')
-        sys.argv.append(r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_mu.mp3')
+        sys.argv.append(r'./python/src/reference/thankyou.mp3')
     sys.exit(main() or 0)
