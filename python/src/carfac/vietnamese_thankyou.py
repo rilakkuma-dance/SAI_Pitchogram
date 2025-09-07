@@ -705,12 +705,12 @@ class DualSAIWithRecording:
                     print("Excellent match!")
                 elif distance <= 3:
                     self.transcription_realtime.set_color('orange')
-                    self.score_display.set_text(f"GOOD MATCH! (Score: {distance})")
+                    self.score_display.set_text(f"GOOD MATCH!")
                     self.score_display.set_color('orange')
                     print(f"Good match (distance: {distance})")
                 else:
                     self.transcription_realtime.set_color('red')
-                    self.score_display.set_text(f"NEEDS PRACTICE (Score: {distance})")
+                    self.score_display.set_text(f"NEEDS PRACTICE")
                     self.score_display.set_color('red')
                     print(f"Poor match (distance: {distance})")
             else:
