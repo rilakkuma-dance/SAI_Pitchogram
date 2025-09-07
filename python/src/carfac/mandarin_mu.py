@@ -302,7 +302,7 @@ class WhisperHandler:
                 audio_float, 
                 fp16=torch.cuda.is_available(),
                 language=language,
-                condition_on_previous_text=False
+                condition_on_previous_text=False,
             )
             text = result.get('text', '').strip()
             
@@ -331,6 +331,10 @@ class WhisperHandler:
             
             if len(self.transcription) > 20:
                 self.transcription = self.transcription[-20:]
+    
+    def get_last_line(self) -> str:
+        with self.lock:
+            return self.transcription[-1] if self.transcription else ""
 
     def get_display_text(self, max_lines=5, max_chars=200):
         with self.lock:
@@ -496,8 +500,9 @@ class VisualizationHandler:
 # ---------------- Dual SAI with Recording ----------------
 class DualSAIWithRecording:
     def __init__(self, audio_file_path=None, chunk_size=1024, sample_rate=16000, sai_width=200,
-             whisper_model="tiny", whisper_interval=1.5, debug=True, playback_speed=3.0, 
-             loop_audio=True, similarity_method='cosine', save_recordings=True, recording_dir="recordings"):
+             whisper_model="base", whisper_interval=1.5, debug=True, playback_speed=3.0, 
+             loop_audio=True, similarity_method='cosine', save_recordings=True, recording_dir="recordings",
+             language: str = "zh"):
         
                 # Audio saving functionality
         self.save_recordings = save_recordings
@@ -557,6 +562,8 @@ class DualSAIWithRecording:
         self.whisper_realtime = WhisperHandler(model_name=whisper_model, debug=debug)
         self.whisper_file = WhisperHandler(model_name=whisper_model, debug=debug)
 
+        self.language: str = language
+
         # Real-time audio setup
         self.audio_queue = queue.Queue(maxsize=50)
         self.whisper_audio_buffer_realtime = []
@@ -589,7 +596,7 @@ class DualSAIWithRecording:
         self._setup_dual_visualization()
 
     def _load_audio_file(self):
-        """Load the audio file for file processing"""
+        """Load the audio file for file processing and transcribe it with Whisper"""
         print(f"Loading audio file: {self.audio_file_path}")
         self.audio_data, self.original_sr = librosa.load(self.audio_file_path, sr=None)
         
@@ -603,6 +610,9 @@ class DualSAIWithRecording:
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
         print(f"Audio loaded: {self.duration:.2f} seconds, {self.total_samples} samples")
+
+        self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
+        self.whisper_file.add_transcription_line(self.file_transcription)
 
     def get_next_file_chunk(self):
         """Get next chunk from file with looping support"""
@@ -730,6 +740,15 @@ class DualSAIWithRecording:
                 print("Recording too short for analysis")
                 return
             
+            # Transcribe it with Whisper
+            transcription = self.whisper_realtime.transcribe_audio(recorded_array, language=self.language)
+            if transcription and len(transcription.strip()) > 0:
+                self.whisper_realtime.add_transcription_line(transcription)
+                if transcription != self.file_transcription:
+                    self.transcription_realtime.set_color('orange')
+                else:
+                    self.transcription_realtime.set_color('lime')
+            
             # Normalize audio
             if np.max(np.abs(recorded_array)) > 0:
                 recorded_array = recorded_array / np.max(np.abs(recorded_array)) * 0.9
@@ -856,7 +875,7 @@ class DualSAIWithRecording:
     def _process_whisper_file_chunk(self, audio_data, timestamp):
         """Process Whisper transcription for file"""
         try:
-            text = self.whisper_file.transcribe_audio(audio_data, language='en')
+            text = self.whisper_file.transcribe_audio(audio_data, language=self.language)
             if text and len(text.strip()) > 0:
                 loop_info = f" (Loop #{self.loop_count})" if self.loop_count > 0 and self.loop_audio else ""
                 timestamped_text = f"[{timestamp:.1f}s{loop_info}] {text}"
@@ -1230,7 +1249,8 @@ def main():
             loop_audio=not args.no_loop,
             similarity_method=args.similarity_method,
             save_recordings=not args.no_save,
-            recording_dir=args.recording_dir
+            recording_dir=args.recording_dir,
+            language="zh",
         )
         
         # Set custom recording duration if specified
