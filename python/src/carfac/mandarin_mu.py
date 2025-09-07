@@ -6,6 +6,8 @@ import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
 ## from matplotlib.collections import LineCollection
 from matplotlib.widgets import Button
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import threading
 import queue
 import time
@@ -13,12 +15,8 @@ import torch
 import whisper
 from dataclasses import dataclass
 import librosa
-import soundfile as sf
 import argparse
 import os
-
-import argostranslate.package
-import argostranslate.translate
 import editdistance
 
 sys.path.append('./jax')
@@ -28,6 +26,17 @@ import carfac.jax.carfac as carfac
 
 from carfac.np.carfac import CarParams
 import sai
+
+plt.rcParams['font.sans-serif'] = [
+    # Chinese fonts
+    'SimHei', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB',
+    # Vietnamese fonts (most use Latin extended)
+    'Arial Unicode MS', 'Tahoma', 'Times New Roman', 'Calibri',
+    # Thai fonts
+    'Tahoma', 'Arial Unicode MS', 'Leelawadee UI', 'Cordia New',
+    # Fallback fonts
+    'DejaVu Sans', 'Liberation Sans', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False  # Handle minus signs properly
 
 @dataclass
 class SAIParams:
@@ -75,13 +84,6 @@ class SimilarityCalculator:
         self.max_similarity = 0.0
         self.similarity_history = []
         
-        self.comparison_methods = {
-            'cosine': self._cosine_similarity,
-            'correlation': self._correlation_similarity,
-            'euclidean': self._euclidean_similarity,
-            'spectral': self._spectral_similarity
-        }
-        
     def add_file_frame(self, sai_frame):
         """Add a file SAI frame to history"""
         if len(self.file_sai_history) >= self.history_size:
@@ -91,151 +93,6 @@ class SimilarityCalculator:
     def set_recorded_frames(self, recorded_frames):
         """Set the recorded SAI frames for comparison"""
         self.recorded_sai_frames = recorded_frames
-    
-    def calculate_similarity_with_file(self, method='cosine'):
-        """Calculate similarity between recorded frames and recent file frames"""
-        if len(self.recorded_sai_frames) == 0 or len(self.file_sai_history) == 0:
-            return 0.0
-        
-        similarity_func = self.comparison_methods.get(method, self._cosine_similarity)
-        similarities = []
-        
-        # Get recent file frames (same number as recorded frames)
-        num_frames = min(len(self.recorded_sai_frames), len(self.file_sai_history))
-        recent_file_frames = self.file_sai_history[-num_frames:]
-        
-        # Compare each recorded frame with corresponding file frame
-        for i in range(min(len(self.recorded_sai_frames), len(recent_file_frames))):
-            rec_frame = self.recorded_sai_frames[i]
-            file_frame = recent_file_frames[i]
-            sim = similarity_func(rec_frame, file_frame)
-            similarities.append(sim)
-        
-        if similarities:
-            raw_similarity = np.mean(similarities)  # Average similarity
-            self.current_similarity = raw_similarity
-            
-            # Apply exponential smoothing
-            self.smoothed_similarity = (self.smoothing_factor * raw_similarity + 
-                                       (1 - self.smoothing_factor) * self.smoothed_similarity)
-            
-            self.max_similarity = max(self.max_similarity, raw_similarity)
-            
-            # Add to history
-            if len(self.similarity_history) >= self.history_size:
-                self.similarity_history.pop(0)
-            self.similarity_history.append(raw_similarity)
-            
-            return raw_similarity
-        
-        return 0.0
-    
-    def _cosine_similarity(self, frame1, frame2):
-        """Calculate cosine similarity between two SAI frames"""
-        try:
-            f1 = frame1.flatten()
-            f2 = frame2.flatten()
-            
-            if np.linalg.norm(f1) == 0 or np.linalg.norm(f2) == 0:
-                return 0.0
-            
-            dot_product = np.dot(f1, f2)
-            norms = np.linalg.norm(f1) * np.linalg.norm(f2)
-            
-            if norms == 0:
-                return 0.0
-            
-            similarity = dot_product / norms
-            return max(0.0, similarity)
-            
-        except Exception:
-            return 0.0
-    
-    def _correlation_similarity(self, frame1, frame2):
-        """Calculate correlation similarity"""
-        try:
-            f1 = frame1.flatten()
-            f2 = frame2.flatten()
-            
-            if len(f1) != len(f2) or len(f1) < 2:
-                return 0.0
-            
-            correlation = np.corrcoef(f1, f2)[0, 1]
-            
-            if np.isnan(correlation):
-                return 0.0
-            
-            return max(0.0, correlation)
-            
-        except Exception:
-            return 0.0
-    
-    def _euclidean_similarity(self, frame1, frame2):
-        """Calculate normalized inverse Euclidean distance"""
-        try:
-            f1 = frame1.flatten()
-            f2 = frame2.flatten()
-            
-            if len(f1) != len(f2):
-                return 0.0
-            
-            distance = np.linalg.norm(f1 - f2)
-            max_distance = np.linalg.norm(np.ones_like(f1))
-            if max_distance == 0:
-                return 0.0
-            
-            similarity = 1.0 - (distance / max_distance)
-            return max(0.0, similarity)
-            
-        except Exception:
-            return 0.0
-    
-    def _spectral_similarity(self, frame1, frame2):
-        """Calculate similarity based on spectral features"""
-        try:
-            spec1 = np.mean(frame1, axis=0)
-            spec2 = np.mean(frame2, axis=0)
-            
-            if len(spec1) < 2 or len(spec2) < 2:
-                return 0.0
-            
-            correlation = np.corrcoef(spec1, spec2)[0, 1]
-            
-            if np.isnan(correlation):
-                return 0.0
-            
-            return max(0.0, correlation)
-            
-        except Exception:
-            return 0.0
-    
-    def get_similarity_stats(self):
-        """Get similarity statistics"""
-        if not self.similarity_history:
-            return {
-                'current': 0.0,
-                'smoothed': 0.0,
-                'max': 0.0,
-                'mean': 0.0,
-                'std': 0.0
-            }
-        
-        return {
-            'current': self.current_similarity,
-            'smoothed': self.smoothed_similarity,
-            'max': self.max_similarity,
-            'mean': np.mean(self.similarity_history),
-            'std': np.std(self.similarity_history)
-        }
-    
-    def reset(self):
-        """Reset similarity calculator"""
-        self.file_sai_history.clear()
-        self.recorded_sai_frames.clear()
-        self.current_similarity = 0.0
-        self.smoothed_similarity = 0.0
-        self.max_similarity = 0.0
-        self.similarity_history.clear()
 
 class TextSimilarityCalculator:
     """Calculates text similarity between recorded transcription and reference file transcription"""
@@ -279,7 +136,7 @@ class RealCARFACProcessor:
 
 # ---------------- Whisper Handler ----------------
 class WhisperHandler:
-    def __init__(self, model_name="base", non_english=False, debug=True):
+    def __init__(self, model_name="base", non_english=True, debug=True):
         self.debug = debug
         model = model_name
         if model_name != "large" and not non_english:
@@ -626,7 +483,6 @@ class DualSAIWithRecording:
         self.audio_data, self.original_sr = librosa.load(self.audio_file_path, sr=None)
         
         if self.original_sr != self.sample_rate:
-            print(f"Resampling from {self.original_sr}Hz to {self.sample_rate}Hz")
             self.audio_data = librosa.resample(self.audio_data, orig_sr=self.original_sr, target_sr=self.sample_rate)
         
         if np.max(np.abs(self.audio_data)) > 0:
@@ -634,7 +490,6 @@ class DualSAIWithRecording:
         
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
-        print(f"Audio loaded: {self.duration:.2f} seconds, {self.total_samples} samples")
 
         self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
         self.whisper_file.add_transcription_line(self.file_transcription)
@@ -805,53 +660,11 @@ class DualSAIWithRecording:
             
             # Store recorded frames in similarity calculator
             self.similarity_calculator.set_recorded_frames(recorded_sai_frames)
-            
-            # Calculate similarity with file
-            if self.audio_data is not None:
-                similarity_score = self.similarity_calculator.calculate_similarity_with_file(
-                    method=self.similarity_method
-                )
-                
-                # Convert to percentage
-                percentage_score = similarity_score * 100
-                self.last_score_percentage = percentage_score
-                self.score_history.append(percentage_score)
-                
-                # Keep only last 10 scores
-                if len(self.score_history) > 10:
-                    self.score_history = self.score_history[-10:]
-                
-                # Provide feedback
-                self._provide_pronunciation_feedback(percentage_score)
                 
         except Exception as e:
             print(f"Error processing recorded audio: {e}")
             import traceback
-            traceback.print_exc()
-
-    def _provide_pronunciation_feedback(self, score):
-        """Provide user feedback based on pronunciation score"""
-        if score >= 85:
-            feedback = "Excellent pronunciation!"
-            color = 'lime'
-        elif score >= 70:
-            feedback = "Good pronunciation!"
-            color = 'green'
-        elif score >= 55:
-            feedback = "Fair pronunciation - keep practicing!"
-            color = 'orange'
-        elif score >= 40:
-            feedback = "Needs improvement - try again!"
-            color = 'yellow'
-        else:
-            feedback = "Keep practicing - you can do better!"
-            color = 'red'
-        
-        # Update the score display
-        score_text = f"Score: {score:.1f}% - {feedback}"
-        if hasattr(self, 'score_display'):
-            self.score_display.set_text(score_text)
-            self.score_display.set_color(color)
+            traceback.print_exc()  
 
     def set_recording_duration(self, duration):
         """Set the recording duration in seconds"""
@@ -875,8 +688,6 @@ class DualSAIWithRecording:
                 self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
                 self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
 
-            except queue.Empty:
-                continue
             except Exception as e:
                 print(f"Real-time audio processing error: {e}")
                 continue
@@ -934,7 +745,7 @@ class DualSAIWithRecording:
         
         # Score display text
         self.score_display = self.ax_score.text(
-            0.5, 0.5, 'Press Record to test pronunciation against reference', 
+            0.5, 0.5, 'Press Record to test pronunciation', 
             transform=self.ax_score.transAxes,
             horizontalalignment='center', verticalalignment='center',
             fontsize=14, color='white', weight='bold',
@@ -1130,42 +941,12 @@ class DualSAIWithRecording:
             if self.is_recording:
                 elapsed = time.time() - self.recording_start_time
                 remaining = max(0, self.recording_duration - elapsed)
-                status_text = f"🔴 RECORDING: {remaining:.1f}s remaining"
+                status_text = f"RECORDING: {remaining:.1f}s remaining"
                 self.status_realtime.set_text(status_text)
                 self.status_realtime.set_color('red')
             else:
                 self.status_realtime.set_text("Ready to record")
                 self.status_realtime.set_color('white')
-                    
-            # Update score display if we have recent scores
-            if self.score_history:
-                recent_scores = self.score_history[-3:]  # Last 3 scores
-                score_trend = "→"
-                if len(recent_scores) >= 2:
-                    if recent_scores[-1] > recent_scores[-2]:
-                        score_trend = "↗"
-                    elif recent_scores[-1] < recent_scores[-2]:
-                        score_trend = "↘"
-                
-                score_summary = f"Latest: {self.last_score_percentage:.1f}% {score_trend} | "
-                score_summary += f"Best: {max(self.score_history):.1f}% | "
-                score_summary += f"Avg: {np.mean(self.score_history):.1f}%"
-                
-                # Color code based on latest score
-                if self.last_score_percentage >= 85:
-                    color = 'lime'
-                elif self.last_score_percentage >= 70:
-                    color = 'lightgreen' 
-                elif self.last_score_percentage >= 55:
-                    color = 'orange'
-                elif self.last_score_percentage >= 40:
-                    color = 'yellow'
-                else:
-                    color = 'lightcoral'
-                
-                if hasattr(self, 'score_display'):
-                    self.score_display.set_text(score_summary)
-                    self.score_display.set_color(color)
             
         except Exception as e:
             print(f"Visualization update error: {e}")
@@ -1187,7 +968,6 @@ class DualSAIWithRecording:
                 stream_callback=self.audio_callback,
                 start=False
             )
-            print(f"Audio stream opened: {self.sample_rate}Hz, {self.chunk_size} frames/buffer")
         except Exception as e:
             print(f"Failed to open audio stream: {e}")
             return
@@ -1197,13 +977,10 @@ class DualSAIWithRecording:
         
         if self.stream:
             self.stream.start_stream()
-            print("Real-time audio processing started")
         
         real_time_interval = (self.chunk_size / self.sample_rate) * 1000
         animation_interval = max(10, int(real_time_interval / max(1, self.playback_speed)))
-        
-        print(f"Animation interval: {animation_interval}ms")
-        
+                
         self.animation = animation.FuncAnimation(
             self.fig, self.update_visualization, interval=animation_interval, 
             blit=False, cache_frame_data=False
@@ -1230,20 +1007,12 @@ class DualSAIWithRecording:
         """Stop the system"""
         self.cleanup()
         plt.close('all')
-        
-        # Print final statistics
-        if self.score_history:
-            print(f"\n=== FINAL STATISTICS ===")
-            print(f"Total attempts: {len(self.score_history)}")
-            print(f"Best score: {max(self.score_history):.1f}%")
-            print(f"Average score: {np.mean(self.score_history):.1f}%")
-            print(f"Latest score: {self.last_score_percentage:.1f}%")
 
 # ---------------- Main ----------------
 def main():
     parser = argparse.ArgumentParser(description='Dual SAI Pronunciation Trainer with Recording')
-    parser.add_argument('--audio-file', default=r'C:\Users\maruk\Downloads\Python310\carfac-SAI\python\src\reference\mandarin_mu.mp3', 
-                        help='Path to reference audio file')
+    parser.add_argument('--audio-file', default='reference/mandarin_mu.mp3', 
+                    help='Path to reference audio file')
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
     parser.add_argument('--sai-width', type=int, default=400, help='SAI width (default: 400)')
@@ -1257,6 +1026,7 @@ def main():
     parser.add_argument('--no-save', action='store_true', help='Disable saving recorded audio files (default: save enabled)')
     parser.add_argument('--recording-dir', default='recordings', help='Directory to save recordings (default: recordings)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--language', default='en', choices=['zh', 'vi', 'th', 'en'])
     
     args = parser.parse_args()
     
@@ -1308,8 +1078,18 @@ def main():
 
 if __name__ == "__main__":
     import sys
+    import os
     if len(sys.argv) == 1:
-        # Run with default audio file if no arguments provided
-        sys.argv.append('--audio-file')
-        sys.argv.append(r'./python/src/reference/thankyou.mp3')
+        # Get the script's directory (src)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Audio file is in reference subdirectory
+        default_audio = os.path.join(script_dir, 'reference', 'mandarin_mu.mp3')
+        
+        if os.path.exists(default_audio):
+            sys.argv.append('--audio-file')
+            sys.argv.append(default_audio)
+        else:
+            print(f"Default audio file not found: {default_audio}")
+            print("Please specify --audio-file argument")
+            sys.exit(1)
     sys.exit(main() or 0)
