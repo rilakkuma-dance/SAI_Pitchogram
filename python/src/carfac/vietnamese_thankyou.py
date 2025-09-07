@@ -524,6 +524,8 @@ class DualSAIWithRecording:
         self._setup_dual_visualization()
 
     def _load_audio_file(self):
+        """Load the audio file for file processing and transcribe it with Whisper"""
+        print(f"Loading audio file: {self.audio_file_path}")
         self.audio_data, self.original_sr = librosa.load(self.audio_file_path, sr=None)
         
         if self.original_sr != self.sample_rate:
@@ -534,7 +536,10 @@ class DualSAIWithRecording:
         
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
-        self.file_transcription = ""
+
+        self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
+        self.whisper_file.add_transcription_line(self.file_transcription)
+
         self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
 
     def get_next_file_chunk(self):
@@ -667,6 +672,8 @@ class DualSAIWithRecording:
                 print("Recording too short for analysis")
                 self.status_realtime.set_text("Recording too short")
                 self.status_realtime.set_color('red')
+                self.score_display.set_text("Recording too short - Please try again")
+                self.score_display.set_color('red')
                 return
             
             # Normalize audio
@@ -685,21 +692,32 @@ class DualSAIWithRecording:
                 print(f"Recorded transcription: {transcription}")
                 self.whisper_realtime.add_transcription_line(transcription)
                 distance = self.text_similarity_calculator.compare_texts(transcription)
+                
                 if distance == 0:
                     self.transcription_realtime.set_color('lime')
+                    self.score_display.set_text("PERFECT MATCH!")
+                    self.score_display.set_color('lime')
                     print("Perfect match!")
                 elif distance <= 1: 
                     self.transcription_realtime.set_color('lime')
+                    self.score_display.set_text("EXCELLENT MATCH!")
+                    self.score_display.set_color('lime')
                     print("Excellent match!")
                 elif distance <= 3:
                     self.transcription_realtime.set_color('orange')
+                    self.score_display.set_text(f"GOOD MATCH! (Score: {distance})")
+                    self.score_display.set_color('orange')
                     print(f"Good match (distance: {distance})")
                 else:
                     self.transcription_realtime.set_color('red')
+                    self.score_display.set_text(f"NEEDS PRACTICE (Score: {distance})")
+                    self.score_display.set_color('red')
                     print(f"Poor match (distance: {distance})")
             else:
                 print("No transcription result")
                 self.transcription_realtime.set_color('gray')
+                self.score_display.set_text("No speech detected - Please try again")
+                self.score_display.set_color('gray')
             
             # Process recorded audio through CARFAC and SAI (existing code)
             temp_carfac = RealCARFACProcessor(fs=self.sample_rate)
@@ -725,6 +743,8 @@ class DualSAIWithRecording:
         except Exception as e:
             self.status_realtime.set_text("Transcription failed")
             self.status_realtime.set_color('red')
+            self.score_display.set_text("PROCESSING ERROR - Please try again")
+            self.score_display.set_color('red')
             print(f"Error processing recorded audio: {e}")
             import traceback
             traceback.print_exc()
