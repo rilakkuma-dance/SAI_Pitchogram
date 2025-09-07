@@ -524,8 +524,6 @@ class DualSAIWithRecording:
         self._setup_dual_visualization()
 
     def _load_audio_file(self):
-        """Load the audio file for file processing and transcribe it with Whisper"""
-        print(f"Loading audio file: {self.audio_file_path}")
         self.audio_data, self.original_sr = librosa.load(self.audio_file_path, sr=None)
         
         if self.original_sr != self.sample_rate:
@@ -536,10 +534,7 @@ class DualSAIWithRecording:
         
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
-
-        self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
-        self.whisper_file.add_transcription_line(self.file_transcription)
-
+        self.file_transcription = ""
         self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
 
     def get_next_file_chunk(self):
