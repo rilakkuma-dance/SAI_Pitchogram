@@ -136,7 +136,7 @@ class RealCARFACProcessor:
 
 # ---------------- Whisper Handler ----------------
 class WhisperHandler:
-    def __init__(self, model_name="base", non_english=True, debug=True):
+    def __init__(self, model_name="base", non_english=False, debug=True):
         self.debug = debug
         model = model_name
         if model_name != "large" and not non_english:
@@ -181,6 +181,7 @@ class WhisperHandler:
                 audio_float, 
                 fp16=torch.cuda.is_available(),
                 language=language,
+                initial_prompt="You are transcribing a single word or syllable.",
                 condition_on_previous_text=False,
             )
             text = result.get('text', '').strip()
