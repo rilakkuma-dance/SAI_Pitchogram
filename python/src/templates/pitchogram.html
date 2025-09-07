@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pitchogram - Pronunciation Trainer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 30px;
+      flex-wrap: wrap;
+    }
+    .language {
+      width: 30%;
+      min-width: 300px;
+      margin: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+    }
+    svg {
+      width: 100%;
+      height: 120px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    h2 {
+      margin-bottom: 15px;
+      font-size: 1.5em;
+    }
+    button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+      color: white;
+      border: none;
+      border-radius: 25px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      min-width: 120px;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      background: linear-gradient(45deg, #FF5252, #26C6DA);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      display: none;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .success {
+      background: rgba(76, 175, 80, 0.8);
+    }
+    .error {
+      background: rgba(244, 67, 54, 0.8);
+    }
+    .loading {
+      background: rgba(255, 193, 7, 0.8);
+    }
+    .instructions {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 15px;
+      margin: 20px auto;
+      max-width: 600px;
+      backdrop-filter: blur(10px);
+    }
+    .debug-links {
+      margin-top: 20px;
+    }
+    .debug-links a {
+      color: #FFD700;
+      text-decoration: none;
+      margin: 0 10px;
+    }
+    .debug-links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pitchogram - Pronunciation Trainer</h1>
+  <div class="instructions">
+    <strong>Click any button below to start the pronunciation trainer for that word or phrase.</strong><br>
+    The training window will open automatically in a new console window.
+  </div>
+  
+  <div class="container">
+    <div class="language">
+      <h2>Mandarin</h2>
+      <svg viewBox="0 0 100 80">
+        <defs>
+          <linearGradient id="mandarin-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#ff6b6b;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#4ecdc4;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <path d="M10,70 Q30,20 50,40 Q70,10 90,60" stroke="url(#mandarin-grad)" fill="transparent" stroke-width="3"/>
+        <circle cx="10" cy="70" r="2" fill="white"/>
+        <circle cx="90" cy="60" r="2" fill="white"/>
+      </svg>
+      <button onclick="runScript('mandarin_mu.py', 'mǔ (3rd tone)')">mǔ</button>
+      <button onclick="runScript('mandarin_mi.py', 'mí (2nd tone)')">mí</button>
+      <button onclick="runScript('mandarin_me.py', 'mè (4th tone)')">mè</button>
+      <button onclick="runScript('mandarin_ma.py', 'mā (1st tone)')">mā</button>
+      <button onclick="runScript('mandarin_sentence.py', 'Mā zài jiā')">Mā zài jiā</button>
+    </div>
+    
+    <div class="language">
+      <h2>Vietnamese</h2>
+      <svg viewBox="0 0 100 80">
+        <defs>
+          <linearGradient id="vietnamese-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#a8e6cf;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#ff8a80;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <path d="M10,40 Q25,15 40,40 Q55,65 70,40 Q85,15 90,40" stroke="url(#vietnamese-grad)" fill="transparent" stroke-width="3"/>
+        <circle cx="10" cy="40" r="2" fill="white"/>
+        <circle cx="90" cy="40" r="2" fill="white"/>
+      </svg>
+      <button onclick="runScript('vietnamese_bu.py', 'bủ')">bủ</button>
+      <button onclick="runScript('vietnamese_bi.py', 'bí')">bí</button>
+      <button onclick="runScript('vietnamese_bo.py', 'bọ')">bọ</button>
+      <button onclick="runScript('vietnamese_be.py', 'bê')">bê</button>
+      <button onclick="runScript('vietnamese_ba.py', 'ba')">ba</button>
+      <button onclick="runScript('vietnamese_sentence.py', 'Ba đọc sách.')">Ba đọc sách.</button>
+    </div>
+    
+    <div class="language">
+      <h2>Thai</h2>
+      <svg viewBox="0 0 100 80">
+        <defs>
+          <linearGradient id="thai-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#ffd93d;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#ff6b9d;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <path d="M10,55 Q25,25 40,55 Q55,25 70,55 Q85,25 90,55" stroke="url(#thai-grad)" fill="transparent" stroke-width="3"/>
+        <circle cx="10" cy="55" r="2" fill="white"/>
+        <circle cx="90" cy="55" r="2" fill="white"/>
+      </svg>
+      <button onclick="runScript('thai_mu.py', 'มู (mu)')">มู (mu)</button>
+      <button onclick="runScript('thai_le.py', 'เล (le)')">เล (le)</button>
+      <button onclick="runScript('thai_ko.py', 'โค (ko)')">โค (ko)</button>
+      <button onclick="runScript('thai_ni.py', 'นิ (ni)')">นิ (ni)</button>
+      <button onclick="runScript('thai_ta.py', 'ตา (ta)')">ตา (ta)</button>
+      <button onclick="runScript('thai_sentence.py', 'ฉันมีตา. (I have eyes.)')">ฉันมีตา.</button>
+    </div>
+  </div>
+
+  <div id="status" class="status">
+    <p id="status-message"></p>
+  </div>
+
+  <div class="debug-links">
+    <a href="/test-js">Test JavaScript</a> |
+    <a href="/debug">Debug Info</a> |
+    <a href="/list-scripts">List Scripts</a>
+  </div>
+
+  <script>
+    function showStatus(message, type) {
+      var statusDiv = document.getElementById('status');
+      var statusMessage = document.getElementById('status-message');
+      
+      statusMessage.innerHTML = message;
+      statusDiv.className = 'status ' + (type || 'success');
+      statusDiv.style.display = 'block';
+      
+      if (type !== 'loading') {
+        setTimeout(function() {
+          statusDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
+
+    function runScript(scriptName, displayText) {
+      var button = event.target;
+      var originalText = button.textContent;
+      
+      // Disable button and show loading
+      button.disabled = true;
+      button.textContent = 'Starting...';
+      showStatus('Starting ' + displayText + ' pronunciation trainer...', 'loading');
+      
+      // Use XMLHttpRequest for better compatibility
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/run-script', true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          // Re-enable button
+          button.disabled = false;
+          button.textContent = originalText;
+          
+          if (xhr.status === 200) {
+            try {
+              var result = JSON.parse(xhr.responseText);
+              if (result.success) {
+                showStatus('Successfully started ' + displayText + ' trainer! Check for a new window.', 'success');
+              } else {
+                showStatus('Error: ' + result.message, 'error');
+              }
+            } catch (e) {
+              showStatus('Error parsing response: ' + e.message, 'error');
+            }
+          } else {
+            showStatus('Network error: HTTP ' + xhr.status, 'error');
+          }
+        }
+      };
+      
+      xhr.onerror = function() {
+        button.disabled = false;
+        button.textContent = originalText;
+        showStatus('Network error: Request failed', 'error');
+      };
+      
+      var data = JSON.stringify({ 
+        script: scriptName,
+        display_text: displayText
+      });
+      
+      xhr.send(data);
+    }
+
+    // Check server connection on load
+    window.addEventListener('load', function() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '/list-scripts', true);
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            showStatus('Connected to server successfully!', 'success');
+          } else {
+            showStatus('Server connection failed. Status: ' + xhr.status, 'error');
+          }
+        }
+      };
+      xhr.send();
+    });
+  </script>
+</body>
+</html>

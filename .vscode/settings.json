@@ -6,5 +6,6 @@
     },
     "githubPullRequests.ignoredPullRequestBranches": [
         "master"
-    ]
+    ],
+    "cmake.sourceDirectory": "C:/Users/maruk/Downloads/Python310/carfac-SAI/cpp"
 }
