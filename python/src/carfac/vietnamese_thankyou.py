@@ -689,15 +689,16 @@ class DualSAIWithRecording:
             if transcription and len(transcription.strip()) > 0:
                 print(f"Recorded transcription: {transcription}")
                 self.whisper_realtime.add_transcription_line(transcription)
-
-                # Compare with file transcription
                 distance = self.text_similarity_calculator.compare_texts(transcription)
                 if distance == 0:
                     self.transcription_realtime.set_color('lime')
                     print("Perfect match!")
-                elif distance < 3:
+                elif distance <= 1: 
+                    self.transcription_realtime.set_color('lime')
+                    print("Excellent match!")
+                elif distance <= 3:
                     self.transcription_realtime.set_color('orange')
-                    print(f"Close match (distance: {distance})")
+                    print(f"Good match (distance: {distance})")
                 else:
                     self.transcription_realtime.set_color('red')
                     print(f"Poor match (distance: {distance})")
@@ -1136,7 +1137,5 @@ if __name__ == "__main__":
             sys.argv.append('--audio-file')
             sys.argv.append(default_audio)
         else:
-            print(f"Default audio file not found: {default_audio}")
-            print("Please specify --audio-file argument")
             sys.exit(1)
     sys.exit(main() or 0)
