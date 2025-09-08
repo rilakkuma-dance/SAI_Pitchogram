@@ -50,21 +50,20 @@
       padding: 10px 20px;
       font-size: 14px;
       cursor: pointer;
-      background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+      background: #4a90e2;
       color: white;
       border: none;
-      border-radius: 25px;
+      border-radius: 8px;
       transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
       min-width: 120px;
     }
     button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-      background: linear-gradient(45deg, #FF5252, #26C6DA);
+      background: #357abd;
+      transform: translateY(-1px);
     }
     button:disabled {
-      opacity: 0.6;
+      background: #cccccc;
+      color: #666666;
       cursor: not-allowed;
       transform: none;
     }
@@ -78,13 +77,16 @@
       margin-right: auto;
     }
     .success {
-      background: rgba(76, 175, 80, 0.8);
+      background: #4caf50;
+      color: white;
     }
     .error {
-      background: rgba(244, 67, 54, 0.8);
+      background: #f44336;
+      color: white;
     }
     .loading {
-      background: rgba(255, 193, 7, 0.8);
+      background: #ff9800;
+      color: white;
     }
     .instructions {
       background: rgba(255, 255, 255, 0.1);
@@ -132,7 +134,7 @@
       <button onclick="runScript('mandarin_mi.py', 'mí (2nd tone)')">mí</button>
       <button onclick="runScript('mandarin_me.py', 'mè (4th tone)')">mè</button>
       <button onclick="runScript('mandarin_ma.py', 'mā (1st tone)')">mā</button>
-      <button onclick="runScript('mandarin_sentence.py', 'Mā zài jiā')">Mā zài jiā</button>
+      <button onclick="runScript('mandarin_thankyou.py', 'Mā zài jiā')">Mā zài jiā</button>
     </div>
     
     <div class="language">
@@ -153,7 +155,7 @@
       <button onclick="runScript('vietnamese_bo.py', 'bọ')">bọ</button>
       <button onclick="runScript('vietnamese_be.py', 'bê')">bê</button>
       <button onclick="runScript('vietnamese_ba.py', 'ba')">ba</button>
-      <button onclick="runScript('vietnamese_sentence.py', 'Ba đọc sách.')">Ba đọc sách.</button>
+      <button onclick="runScript('vietnamese_thankyou.py', 'Ba đọc sách.')">Cảm ơn (Thank you).</button>
     </div>
     
     <div class="language">
@@ -174,7 +176,7 @@
       <button onclick="runScript('thai_ko.py', 'โค (ko)')">โค (ko)</button>
       <button onclick="runScript('thai_ni.py', 'นิ (ni)')">นิ (ni)</button>
       <button onclick="runScript('thai_ta.py', 'ตา (ta)')">ตา (ta)</button>
-      <button onclick="runScript('thai_sentence.py', 'ฉันมีตา. (I have eyes.)')">ฉันมีตา.</button>
+      <button onclick="runScript('thai_thankyou.py', 'ฉันมีตา. (I have eyes.)')">ขอบคุณ.</button>
     </div>
   </div>
 
