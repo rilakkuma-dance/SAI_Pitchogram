@@ -432,6 +432,11 @@ class DualSAIWithRecording:
         self.playback_speed = playback_speed
         self.loop_audio = loop_audio
         
+        # Initialize reference text attributes
+        self.reference_text = None           # Clean text for comparison
+        self.reference_pronunciation = None  # Pronunciation guide for display
+        self.file_transcription = None       # What gets compared against (same as reference_text)
+        
         # Recording functionality
         self.is_recording = False
         self.recorded_audio = []
@@ -446,7 +451,7 @@ class DualSAIWithRecording:
 
         # defer this until we have a file transcription
         self.text_similarity_calculator = None
-        
+             
         # Initialize processing components for both sides
         self.carfac_realtime = RealCARFACProcessor(fs=sample_rate)
         self.carfac_file = RealCARFACProcessor(fs=sample_rate)
@@ -528,13 +533,61 @@ class DualSAIWithRecording:
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
         
-        # Set reference text directly
-        self.set_reference_text('謝謝(xièxie)')
+        # Set both reference text and pronunciation
+        self.set_reference_text('谢谢')         # For comparison
+        self.set_pronunciation_guide('(xièxie) meaning: thank you')   # For display
+        
         
         # Initialize audio playback
         if self.audio_playback_enabled:
             self._setup_audio_playback()
 
+    def set_reference_text(self, text):
+        """Set the reference text for comparison (clean text only)"""
+        self.reference_text = text.strip()
+        self.file_transcription = self.reference_text  # This is what gets compared
+        
+        if self.file_transcription:
+            # Use ONLY the clean text for similarity comparison
+            self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
+            print(f"Reference text for comparison: {self.file_transcription}")
+        else:
+            self.text_similarity_calculator = None
+            print("Reference text cleared")
+        
+        # Update display if we have both text and pronunciation
+        self._update_display()
+
+    def set_pronunciation_guide(self, pronunciation: str):
+        """Set the pronunciation guide for display purposes"""
+        self.reference_pronunciation = pronunciation
+        print(f"Pronunciation guide: {pronunciation}")
+        
+        # Update display with both text and pronunciation
+        self._update_display()
+
+    def _update_display(self):
+        """Update the display with both reference text and pronunciation"""
+        if self.reference_text and self.reference_pronunciation:
+            # Display format: "Reference: 谢谢(xièxie)"
+            display_text = f"{self.reference_text}{self.reference_pronunciation}"
+        elif self.reference_text:
+            # Only text available
+            display_text = f"{self.reference_text}"
+        else:
+            display_text = "No reference set"
+        
+        print(f"Display text: {display_text}")
+        
+        # Update the file transcription display
+        if hasattr(self, 'whisper_file'):
+            self.whisper_file.transcription = [display_text]
+        
+        # Update display with mint color
+        if hasattr(self, 'transcription_file'):
+            self.transcription_file.set_text(display_text)
+            self.transcription_file.set_color('lightgreen')
+        
     def _setup_audio_playback(self):
         """Setup audio playback for reference file"""
         try:
@@ -597,25 +650,6 @@ class DualSAIWithRecording:
         except Exception as e:
             print(f"Audio playback callback error: {e}")
             outdata.fill(0)
-
-    def set_reference_text(self, text):
-        """Set the reference text for comparison"""
-        self.file_transcription = text.strip()
-        if self.file_transcription:
-            self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
-            print(f"Reference text set to: {self.file_transcription}")
-            
-            # Update the file transcription display
-            if hasattr(self, 'whisper_file'):
-                self.whisper_file.transcription = [self.file_transcription]
-            
-            # Update display with mint color only
-            if hasattr(self, 'transcription_file'):
-                self.transcription_file.set_text(f"Reference: {self.file_transcription}")
-                self.transcription_file.set_color('lightgreen')
-        else:
-            self.text_similarity_calculator = None
-            print("Reference text cleared")
 
     def get_next_file_chunk(self):
         """Get next chunk from file with looping support"""
@@ -767,30 +801,61 @@ class DualSAIWithRecording:
             self.status_realtime.set_color('white')
             
             if transcription and len(transcription.strip()) > 0:
-                print(f"Recorded transcription: {transcription}")
-                self.whisper_realtime.add_transcription_line(transcription)
-                distance = self.text_similarity_calculator.compare_texts(transcription)
+                print(f"Recorded transcription: '{transcription}'")
+                print(f"Reference text: '{self.file_transcription}'")
                 
+                # Add to transcription display
+                self.whisper_realtime.add_transcription_line(transcription)
+                
+                # Calculate edit distance
+                distance = self.text_similarity_calculator.compare_texts(transcription)
+                print(f"Edit distance: {distance}")
+                
+                # Get reference length for relative scoring
+                ref_length = len(self.text_similarity_calculator.file_transcription)
+                print(f"Reference length: {ref_length}")
+                
+                # Calculate percentage accuracy (100% - error_percentage)
+                if ref_length > 0:
+                    error_percentage = (distance / ref_length) * 100
+                    accuracy_percentage = max(0, 100 - error_percentage)
+                else:
+                    accuracy_percentage = 0 if distance > 0 else 100
+                
+                print(f"Accuracy: {accuracy_percentage:.1f}%")
+                
+                # More lenient scoring thresholds
                 if distance == 0:
+                    # Perfect match
                     self.transcription_realtime.set_color('lime')
                     self.score_display.set_text("PERFECT MATCH!")
                     self.score_display.set_color('lime')
                     print("Perfect match!")
-                elif distance <= 1: 
+                elif accuracy_percentage >= 85:  # Very small errors allowed
+                    # Excellent match (≤15% error)
                     self.transcription_realtime.set_color('lime')
-                    self.score_display.set_text("EXCELLENT MATCH!")
+                    self.score_display.set_text(f"EXCELLENT! {accuracy_percentage:.0f}% accuracy")
                     self.score_display.set_color('lime')
-                    print("Excellent match!")
-                elif distance <= 3:
+                    print(f"Excellent match! Accuracy: {accuracy_percentage:.1f}%")
+                elif accuracy_percentage >= 70:  # Allow moderate errors
+                    # Good match (15-30% error)
                     self.transcription_realtime.set_color('orange')
-                    self.score_display.set_text(f"GOOD MATCH!")
+                    self.score_display.set_text(f"GOOD! {accuracy_percentage:.0f}% accuracy")
                     self.score_display.set_color('orange')
-                    print(f"Good match (distance: {distance})")
+                    print(f"Good match! Accuracy: {accuracy_percentage:.1f}%")
+                elif accuracy_percentage >= 50:  # Still recognizable
+                    # Fair match (30-50% error)
+                    self.transcription_realtime.set_color('yellow')
+                    self.score_display.set_text(f"FAIR - {accuracy_percentage:.0f}% accuracy - Keep practicing!")
+                    self.score_display.set_color('yellow')
+                    print(f"Fair match! Accuracy: {accuracy_percentage:.1f}%")
                 else:
+                    # Poor match (>50% error)
                     self.transcription_realtime.set_color('red')
-                    self.score_display.set_text(f"NEEDS PRACTICE")
+                    self.score_display.set_text(f"NEEDS PRACTICE - {accuracy_percentage:.0f}% accuracy")
                     self.score_display.set_color('red')
-                    print(f"Poor match (distance: {distance})")
+                    print(f"Poor match! Accuracy: {accuracy_percentage:.1f}%")
+                    
             else:
                 print("No transcription result")
                 self.transcription_realtime.set_color('gray')
@@ -826,6 +891,27 @@ class DualSAIWithRecording:
             print(f"Error processing recorded audio: {e}")
             import traceback
             traceback.print_exc()
+
+
+# Also update the TextSimilarityCalculator's preprocess_text method for better text normalization:
+
+    def preprocess_text(self, text: str) -> str:
+        """Preprocess text by normalizing whitespace, case, and basic punctuation"""
+        import re
+        
+        # Convert to lowercase and strip
+        text = text.lower().strip()
+        
+        # Remove common punctuation but keep essential characters
+        text = re.sub(r'[.,!?;:"\'\(\)\[\]{}]', '', text)
+        
+        # Normalize whitespace (multiple spaces to single space)
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Strip again after normalization
+        text = text.strip()
+        
+        return text
 
     def set_recording_duration(self, duration):
         """Set the recording duration in seconds"""
