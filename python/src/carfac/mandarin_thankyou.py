@@ -227,7 +227,7 @@ class WhisperHandler:
             
             return display
         
-    def transcribe_once(self, audio_data, language='en'):
+    def transcribe_once(self, audio_data, language='zh'):
         """Transcribe audio data once and return the result immediately"""
         min_samples = int(self.sample_rate * 0.5)
         
@@ -435,6 +435,7 @@ class DualSAIWithRecording:
         # Initialize reference text attributes
         self.reference_text = None           # Clean text for comparison
         self.reference_pronunciation = None  # Pronunciation guide for display
+        self.translated_text = None          # Translation for display  <- ADD THIS LINE
         self.file_transcription = None       # What gets compared against (same as reference_text)
         
         # Recording functionality
@@ -451,6 +452,7 @@ class DualSAIWithRecording:
 
         # defer this until we have a file transcription
         self.text_similarity_calculator = None
+  
              
         # Initialize processing components for both sides
         self.carfac_realtime = RealCARFACProcessor(fs=sample_rate)
@@ -535,8 +537,8 @@ class DualSAIWithRecording:
         
         # Set both reference text and pronunciation
         self.set_reference_text('谢谢')         # For comparison
-        self.set_pronunciation_guide('(xièxie) meaning: thank you')   # For display
-        
+        self.set_pronunciation_guide('xièxiè')   # For display
+        self.set_translated_text('thank you')   # For display
         
         # Initialize audio playback
         if self.audio_playback_enabled:
@@ -566,28 +568,41 @@ class DualSAIWithRecording:
         # Update display with both text and pronunciation
         self._update_display()
 
-    def _update_display(self):
-        """Update the display with both reference text and pronunciation"""
-        if self.reference_text and self.reference_pronunciation:
-            # Display format: "Reference: 谢谢(xièxie)"
-            display_text = f"{self.reference_text}{self.reference_pronunciation}"
-        elif self.reference_text:
-            # Only text available
-            display_text = f"{self.reference_text}"
-        else:
-            display_text = "No reference set"
+    def set_translated_text(self, translation: str):
+        """Set the translation text for display purposes"""
+        self.translated_text = translation.strip()
+        print(f"Translation: {translation}")
         
-        print(f"Display text: {display_text}")
+        # Update display with reference, pronunciation, and translation
+        self._update_display()
+
+    def _update_display(self):
+        """Update the display with reference text, pronunciation, and translation"""
+        # Main reference line with pronunciation
+        if self.reference_text and self.reference_pronunciation:
+            main_display = f"{self.reference_text}({self.reference_pronunciation})"
+        elif self.reference_text:
+            main_display = f"{self.reference_text}"
+        else:
+            main_display = "No reference set"
+        
+        # Add translation on a new line if available
+        if self.translated_text:
+            full_display = f"{main_display}\n{self.translated_text}"
+        else:
+            full_display = main_display
+        
+        print(f"Display text: {full_display}")
         
         # Update the file transcription display
         if hasattr(self, 'whisper_file'):
-            self.whisper_file.transcription = [display_text]
+            self.whisper_file.transcription = [full_display]
         
         # Update display with mint color
         if hasattr(self, 'transcription_file'):
-            self.transcription_file.set_text(display_text)
+            self.transcription_file.set_text(full_display)
             self.transcription_file.set_color('lightgreen')
-        
+
     def _setup_audio_playback(self):
         """Setup audio playback for reference file"""
         try:
@@ -1282,7 +1297,7 @@ class DualSAIWithRecording:
 # ---------------- Main ----------------
 def main():
     parser = argparse.ArgumentParser(description='Dual SAI Pronunciation Trainer with Recording')
-    parser.add_argument('--audio-file', default='reference/mandarin_thankyou.mp3', 
+    parser.add_argument('--audio-file', default='reference/mandarin_shu.mp3', 
                     help='Path to reference audio file')
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
