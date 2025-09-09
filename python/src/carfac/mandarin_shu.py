@@ -529,7 +529,7 @@ class DualSAIWithRecording:
         self.duration = self.total_samples / self.sample_rate
         
         # Set reference text directly
-        self.set_reference_text('书 (shū)')
+        self.set_reference_text('书(shū)')
         
         # Initialize audio playback
         if self.audio_playback_enabled:

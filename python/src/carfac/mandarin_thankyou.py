@@ -4,9 +4,7 @@ import pyaudio
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
-## from matplotlib.collections import LineCollection
 from matplotlib.widgets import Button
-import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import threading
 import queue
@@ -18,6 +16,7 @@ import librosa
 import argparse
 import os
 import editdistance
+import sounddevice as sd
 
 sys.path.append('./jax')
 import jax
@@ -179,7 +178,7 @@ class WhisperHandler:
         try:
             result = self.audio_model.transcribe(
                 audio_float, 
-             fp16=torch.cuda.is_available(),
+                fp16=torch.cuda.is_available(),
                 language=language,
                 condition_on_previous_text=False,
             )
@@ -228,7 +227,7 @@ class WhisperHandler:
             
             return display
         
-    def transcribe_once(self, audio_data, language='zh'):
+    def transcribe_once(self, audio_data, language='en'):
         """Transcribe audio data once and return the result immediately"""
         min_samples = int(self.sample_rate * 0.5)
         
@@ -421,19 +420,9 @@ class VisualizationHandler:
 # ---------------- Dual SAI with Recording ----------------
 class DualSAIWithRecording:
     def __init__(self, audio_file_path=None, chunk_size=1024, sample_rate=16000, sai_width=200,
-             whisper_model="base", whisper_interval=1.5, debug=True, playback_speed=3.0, 
-             loop_audio=True, similarity_method='cosine', save_recordings=True, recording_dir="recordings",
-             language: str = "zh"):
-        
-                # Audio saving functionality
-        self.save_recordings = save_recordings
-        self.recording_dir = recording_dir
-        self.recording_counter = 0
-
-        # Create recordings directory if it doesn't exist
-        if self.save_recordings:
-            os.makedirs(self.recording_dir, exist_ok=True)
-            print(f"Recordings will be saved to: {os.path.abspath(self.recording_dir)}")
+            whisper_model="base", whisper_interval=1.5, debug=True, playback_speed=3.0, 
+            loop_audio=True, similarity_method='cosine', save_recordings=True, recording_dir="recordings",
+            language: str = "zh"):
 
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
@@ -456,7 +445,7 @@ class DualSAIWithRecording:
         self.similarity_method = similarity_method
 
         # defer this until we have a file transcription
-        self.text_similarity_calculator: TextSimilarityCalculator
+        self.text_similarity_calculator = None
         
         # Initialize processing components for both sides
         self.carfac_realtime = RealCARFACProcessor(fs=sample_rate)
@@ -504,6 +493,12 @@ class DualSAIWithRecording:
         self.total_samples = 0
         self.loop_count = 0
         
+        # Audio playback for reference file
+        self.audio_playback_enabled = True
+        self.audio_output_stream = None
+        self.playback_position = 0.0  # Separate position for audio playback
+        self.playback_chunk_size = chunk_size
+        
         if audio_file_path and os.path.exists(audio_file_path):
             self._load_audio_file()
         
@@ -520,7 +515,7 @@ class DualSAIWithRecording:
         self._setup_dual_visualization()
 
     def _load_audio_file(self):
-        """Load the audio file for file processing and transcribe it with Whisper"""
+        """Load the audio file for file processing"""
         print(f"Loading audio file: {self.audio_file_path}")
         self.audio_data, self.original_sr = librosa.load(self.audio_file_path, sr=None)
         
@@ -532,11 +527,95 @@ class DualSAIWithRecording:
         
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
+        
+        # Set reference text directly
+        self.set_reference_text('謝謝(xièxie)')
+        
+        # Initialize audio playback
+        if self.audio_playback_enabled:
+            self._setup_audio_playback()
 
-        self.file_transcription = self.whisper_file.transcribe_audio(self.audio_data, language=self.language)
-        self.whisper_file.add_transcription_line(self.file_transcription)
+    def _setup_audio_playback(self):
+        """Setup audio playback for reference file"""
+        try:
+            # Using sounddevice for audio output
+            self.audio_output_stream = sd.OutputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype=np.float32,
+                blocksize=self.playback_chunk_size,
+                callback=self._audio_playback_callback
+            )
+            print("Audio playback stream created")
+        except Exception as e:
+            print(f"Failed to create audio playback stream: {e}")
+            self.audio_playback_enabled = False
 
-        self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
+    def _audio_playback_callback(self, outdata, frames, time, status):
+        """Audio playback callback - synchronized with SAI processing"""
+        if status:
+            print(f"Audio playback status: {status}")
+        
+        try:
+            if self.audio_data is not None and hasattr(self, 'playback_position'):
+                # Use separate playback position to avoid conflicts with SAI processing
+                start_pos = int(self.playback_position)
+                end_pos = min(start_pos + frames, self.total_samples)
+                
+                if start_pos < self.total_samples:
+                    chunk = self.audio_data[start_pos:end_pos]
+                    
+                    # Handle end of file
+                    if len(chunk) < frames:
+                        if self.loop_audio:
+                            # Loop the audio
+                            remaining = frames - len(chunk)
+                            if remaining > 0 and self.total_samples > 0:
+                                loop_chunk = self.audio_data[:min(remaining, self.total_samples)]
+                                chunk = np.concatenate([chunk, loop_chunk])
+                                self.playback_position = len(loop_chunk)
+                            else:
+                                self.playback_position = 0
+                        else:
+                            # Pad with silence
+                            chunk = np.pad(chunk, (0, frames - len(chunk)), 'constant')
+                            self.playback_position = end_pos
+                    else:
+                        self.playback_position = end_pos
+                    
+                    # Reset position if we've reached the end
+                    if self.playback_position >= self.total_samples:
+                        self.playback_position = 0
+                    
+                    outdata[:, 0] = chunk[:frames]
+                else:
+                    # Silence if no audio data
+                    outdata.fill(0)
+            else:
+                outdata.fill(0)
+                
+        except Exception as e:
+            print(f"Audio playback callback error: {e}")
+            outdata.fill(0)
+
+    def set_reference_text(self, text):
+        """Set the reference text for comparison"""
+        self.file_transcription = text.strip()
+        if self.file_transcription:
+            self.text_similarity_calculator = TextSimilarityCalculator(self.file_transcription)
+            print(f"Reference text set to: {self.file_transcription}")
+            
+            # Update the file transcription display
+            if hasattr(self, 'whisper_file'):
+                self.whisper_file.transcription = [self.file_transcription]
+            
+            # Update display with mint color only
+            if hasattr(self, 'transcription_file'):
+                self.transcription_file.set_text(f"Reference: {self.file_transcription}")
+                self.transcription_file.set_color('lightgreen')
+        else:
+            self.text_similarity_calculator = None
+            print("Reference text cleared")
 
     def get_next_file_chunk(self):
         """Get next chunk from file with looping support"""
@@ -617,10 +696,6 @@ class DualSAIWithRecording:
         self.recorded_audio = []
         self.recording_start_time = time.time()
         
-        # Update button appearance
-        self.btn_record.label.set_text('⏹ REC')
-        self.btn_record.color = (1, 0, 0, 0.8)  # Red when recording
-        
         # Start countdown thread
         threading.Thread(target=self._recording_countdown, daemon=True).start()
 
@@ -632,7 +707,7 @@ class DualSAIWithRecording:
         self.is_recording = False
         
         # Update button appearance
-        self.btn_record.label.set_text('REC')
+        self.btn_record.label.set_text('Record')
         self.btn_record.color = (0, 0.8, 1, 0.8)  # Blue when not recording
         
         if len(self.recorded_audio) > 0:
@@ -653,9 +728,16 @@ class DualSAIWithRecording:
             self.stop_recording()
 
     def _process_recorded_audio(self):
-        """Process recorded audio and compare against file SAI frames"""
+        """Process recorded audio and compare against reference text"""
         try:
             print("Processing recorded audio...")
+            
+            # Check if text similarity calculator exists
+            if self.text_similarity_calculator is None:
+                self.score_display.set_text("No reference text set")
+                self.score_display.set_color('yellow')
+                print("No reference text available for comparison")
+                return
             
             # Update status to show transcription is happening
             self.status_realtime.set_text("Transcribing...")
@@ -752,6 +834,7 @@ class DualSAIWithRecording:
 
     def process_realtime_audio(self):
         """Process real-time audio stream"""
+        print("Real-time audio processing thread started")
         while self.running:
             try:
                 audio_chunk = self.audio_queue.get(timeout=0.1)
@@ -767,6 +850,8 @@ class DualSAIWithRecording:
                 self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
                 self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
 
+            except queue.Empty:
+                continue
             except Exception as e:
                 print(f"Real-time audio processing error: {e}")
                 continue
@@ -776,20 +861,11 @@ class DualSAIWithRecording:
 
     def _process_whisper_file_chunk(self, audio_data, timestamp):
         """Process Whisper transcription for file"""
-        try:
-            text = self.whisper_file.transcribe_audio(audio_data, language=self.language)
-            if text and len(text.strip()) > 0:
-                loop_info = f" (Loop #{self.loop_count})" if self.loop_count > 0 and self.loop_audio else ""
-                timestamped_text = f"[{timestamp:.1f}s{loop_info}] {text}"
-                self.whisper_file.add_transcription_line(timestamped_text)
-        except Exception as e:
-            print(f"File Whisper processing error: {e}")
+        pass
 
     def _setup_dual_visualization(self):
         """Setup dual screen visualization with recording controls"""
         self.fig = plt.figure(figsize=(20, 16))
-        
-        # Create layout
         gs = self.fig.add_gridspec(16, 2, height_ratios=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.8, 0.3, 0.3, 0.3, 0.3, 0.2])
         
         self.ax_realtime = self.fig.add_subplot(gs[0:10, 0])
@@ -804,7 +880,7 @@ class DualSAIWithRecording:
         
         # Score display text
         self.score_display = self.ax_score.text(
-            0.5, 0.5, 'Press Record to test pronunciation', 
+            0.5, 0.5, 'Click Record to test pronunciation or Click Play/Stop for reference audio file', 
             transform=self.ax_score.transAxes,
             horizontalalignment='center', verticalalignment='center',
             fontsize=14, color='white', weight='bold',
@@ -817,8 +893,8 @@ class DualSAIWithRecording:
         
         # Enhanced colormap
         colors = ['#000022', '#000055', '#0033AA', '#0066FF', '#00AAFF',
-                  '#00FFAA', '#33FF77', '#77FF33', '#AAFF00', '#FFAA00',
-                  '#FF7700', '#FF3300', '#FF0044', '#CC0077', '#FFFFFF']
+                '#00FFAA', '#33FF77', '#77FF33', '#AAFF00', '#FFAA00',
+                '#FF7700', '#FF3300', '#FF0044', '#CC0077', '#FFFFFF']
         self.cmap = LinearSegmentedColormap.from_list("enhanced_audio", colors, N=256)
         
         # Setup left side (real-time)
@@ -826,7 +902,6 @@ class DualSAIWithRecording:
             self.vis_realtime.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, 200, 0, self.vis_realtime.output.shape[0]]
         )
-        self.ax_realtime.set_title("Real-time Microphone SAI", color='white', fontsize=14, pad=20)
         self.ax_realtime.axis('off')
         
         # Setup right side (file)
@@ -834,19 +909,19 @@ class DualSAIWithRecording:
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, 200, 0, self.vis_file.output.shape[0]]
         )
-        file_title = f"Reference File SAI: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file loaded'}"
-        self.ax_file.set_title(file_title, color='white', fontsize=14, pad=20)
+        file_title = os.path.basename(self.audio_file_path)
+        self.ax_file.set_title(file_title, color='white', fontsize=10, pad=20)
         
         # Add text overlays for each side
         self.transcription_realtime = self.ax_realtime.text(
             0.02, 0.02, '', transform=self.ax_realtime.transAxes,
-            verticalalignment='bottom', fontsize=10, color='lime', weight='bold',
+            verticalalignment='bottom', fontsize=20, color='lime', weight='bold',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
         
         self.transcription_file = self.ax_file.text(
             0.02, 0.02, '', transform=self.ax_file.transAxes,
-            verticalalignment='bottom', fontsize=10, color='cyan', weight='bold',
+            verticalalignment='bottom', fontsize=20, color='cyan', weight='bold',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
         
@@ -876,12 +951,25 @@ class DualSAIWithRecording:
         button_width = 0.08
         button_y = 0.02
         spacing = 0.12
-        start_x = 0.2
+        total_width = button_width + spacing + button_width + spacing + (button_width*0.6) + 0.08 + (button_width*0.8) + 0.08 + (button_width*0.6)
+        start_x = (1.0 - total_width) / 2 + 0.1  # Center horizontally
+        
+        
+        # Playback toggle button
+        self.ax_playback = plt.axes([start_x, button_y, button_width, button_height], 
+                                   facecolor='none', frameon=False)
+        self.btn_playback = Button(self.ax_playback, 'Play', 
+                                  color=(0, 0.6, 0, 0.8), 
+                                  hovercolor=(0, 0.8, 0, 1.0))
+        self.btn_playback.label.set_fontsize(10)
+        self.btn_playback.label.set_color('white')
+        self.btn_playback.label.set_weight('bold')
+        self.btn_playback.on_clicked(self.toggle_playback)
         
         # Record button
-        self.ax_record = plt.axes([start_x, button_y, button_width, button_height], 
+        self.ax_record = plt.axes([start_x + spacing, button_y, button_width, button_height], 
                                  facecolor='none', frameon=False)
-        self.btn_record = Button(self.ax_record, '🎤 REC', 
+        self.btn_record = Button(self.ax_record, 'Record', 
                                 color=(0, 0.8, 1, 0.8), 
                                 hovercolor=(0, 0.8, 1, 1.0))
         self.btn_record.label.set_fontsize(12)
@@ -890,7 +978,7 @@ class DualSAIWithRecording:
         self.btn_record.on_clicked(self.start_recording)
         
         # Duration controls
-        self.ax_duration_down = plt.axes([start_x + spacing, button_y, button_width*0.6, button_height], 
+        self.ax_duration_down = plt.axes([start_x + spacing*2, button_y, button_width*0.6, button_height], 
                                         facecolor='none', frameon=False)
         self.btn_duration_down = Button(self.ax_duration_down, '-', 
                                        color=(0.8, 0.8, 0.8, 0.6), 
@@ -901,7 +989,7 @@ class DualSAIWithRecording:
         self.btn_duration_down.on_clicked(lambda x: self.change_recording_duration(-1))
         
         # Duration display
-        self.ax_duration_display = plt.axes([start_x + spacing + 0.08, button_y, button_width*0.8, button_height], 
+        self.ax_duration_display = plt.axes([start_x + spacing*2 + 0.08, button_y, button_width*0.8, button_height], 
                                            facecolor='none', frameon=False)
         self.duration_text = self.ax_duration_display.text(0.5, 0.5, f'{self.recording_duration:.1f}s', 
                                                           ha='center', va='center', 
@@ -914,7 +1002,7 @@ class DualSAIWithRecording:
         self.ax_duration_display.axis('off')
         
         # Duration up button
-        self.ax_duration_up = plt.axes([start_x + spacing + 0.16, button_y, button_width*0.6, button_height], 
+        self.ax_duration_up = plt.axes([start_x + spacing*2 + 0.16, button_y, button_width*0.6, button_height], 
                                       facecolor='none', frameon=False)
         self.btn_duration_up = Button(self.ax_duration_up, '+', 
                                      color=(0.8, 0.8, 0.8, 0.6), 
@@ -923,6 +1011,22 @@ class DualSAIWithRecording:
         self.btn_duration_up.label.set_color('white')
         self.btn_duration_up.label.set_weight('bold')
         self.btn_duration_up.on_clicked(lambda x: self.change_recording_duration(1))
+
+    def toggle_playback(self, event=None):
+        """Toggle audio playback on/off"""
+        if self.audio_playback_enabled and self.audio_output_stream:
+            if self.audio_output_stream.active:
+                self.audio_output_stream.stop()
+                self.btn_playback.label.set_text('PLAY')
+                self.btn_playback.color = (0, 0.6, 0, 0.8)
+                print("Audio playback stopped")
+            else:
+                self.audio_output_stream.start()
+                self.btn_playback.label.set_text('STOP')
+                self.btn_playback.color = (0.8, 0, 0, 0.8)
+                print("Audio playback started")
+        else:
+            print("Audio playback not available")
 
     def change_recording_duration(self, delta):
         """Change recording duration"""
@@ -1004,8 +1108,14 @@ class DualSAIWithRecording:
                 self.status_realtime.set_text(status_text)
                 self.status_realtime.set_color('red')
             else:
-                self.status_realtime.set_text("Ready to record")
-                self.status_realtime.set_color('white')
+                # Show real-time audio activity level
+                if hasattr(self, 'audio_queue') and not self.audio_queue.empty():
+                    queue_size = self.audio_queue.qsize()
+                    self.status_realtime.set_text(f"Audio active (queue: {queue_size})")
+                    self.status_realtime.set_color('white')
+                else:
+                    self.status_realtime.set_text("Ready to record")
+                    self.status_realtime.set_color('white')
             
         except Exception as e:
             print(f"Visualization update error: {e}")
@@ -1028,14 +1138,20 @@ class DualSAIWithRecording:
                 start=False
             )
         except Exception as e:
-            print(f"Failed to open audio stream: {e}")
             return
 
         self.running = True
         threading.Thread(target=self.process_realtime_audio, daemon=True).start()
         
+        # Start input stream
         if self.stream:
             self.stream.start_stream()
+            print("Audio input stream started")
+        
+        # Start output stream for audio playback
+        if self.audio_playback_enabled and self.audio_output_stream:
+            self.audio_output_stream.start()
+            print("Audio playback stream started")
         
         real_time_interval = (self.chunk_size / self.sample_rate) * 1000
         animation_interval = max(10, int(real_time_interval / max(1, self.playback_speed)))
@@ -1050,6 +1166,16 @@ class DualSAIWithRecording:
         """Clean up resources"""
         self.running = False
         self.is_recording = False
+        
+        # Stop audio playback
+        if self.audio_output_stream:
+            try:
+                self.audio_output_stream.stop()
+                self.audio_output_stream.close()
+            except:
+                pass
+        
+        # Stop audio input
         try:
             if self.stream:
                 self.stream.stop_stream()
@@ -1075,7 +1201,7 @@ def main():
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
     parser.add_argument('--sai-width', type=int, default=400, help='SAI width (default: 400)')
-    parser.add_argument('--whisper-model', default='tiny', help='Whisper model (default: tiny)')
+    parser.add_argument('--whisper-model', default='large', help='Whisper model (default: large)')
     parser.add_argument('--whisper-interval', type=float, default=2.0, help='Whisper processing interval in seconds (default: 2.0)')
     parser.add_argument('--similarity-method', default='cosine', choices=['cosine', 'correlation', 'euclidean', 'spectral'], 
                         help='Similarity calculation method (default: cosine)')
@@ -1093,9 +1219,6 @@ def main():
         print(f"Error: Audio file '{args.audio_file}' not found")
         return 1
     
-    if not args.audio_file:
-        print("Error: No audio file specified")
-        return 1
     
     try:
         processor = DualSAIWithRecording(
@@ -1121,12 +1244,6 @@ def main():
         
     except KeyboardInterrupt:
         print("\nProcessing interrupted by user")
-        if not args.no_save:
-            try:
-                summary = processor.get_recordings_summary()
-                print(f"\n{summary}")
-            except:
-                pass
         return 0
     except Exception as e:
         print(f"Error in dual SAI trainer: {e}")

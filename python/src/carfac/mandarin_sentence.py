@@ -529,7 +529,7 @@ class DualSAIWithRecording:
         self.duration = self.total_samples / self.sample_rate
         
         # Set reference text directly
-        self.set_reference_text('雄(xióng)')
+        self.set_reference_text('女人去买书(Nǚ rén qù mǎi shū)')
         
         # Initialize audio playback
         if self.audio_playback_enabled:
@@ -1196,7 +1196,7 @@ class DualSAIWithRecording:
 # ---------------- Main ----------------
 def main():
     parser = argparse.ArgumentParser(description='Dual SAI Pronunciation Trainer with Recording')
-    parser.add_argument('--audio-file', default='reference/mandarin_xiong.mp3', 
+    parser.add_argument('--audio-file', default='reference/mandarin_sentence.mp3', 
                     help='Path to reference audio file')
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size (default: 512)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate (default: 16000)')
@@ -1259,7 +1259,7 @@ if __name__ == "__main__":
         # Get the script's directory (src)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         # Audio file is in reference subdirectory
-        default_audio = os.path.join(script_dir, 'reference', 'mandarin_xiong.mp3')
+        default_audio = os.path.join(script_dir, 'reference', 'mandarin_sentence.mp3')
         
         if os.path.exists(default_audio):
             sys.argv.append('--audio-file')
