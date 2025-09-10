@@ -136,34 +136,40 @@ class RealCARFACProcessor:
 # ---------------- Whisper Handler ----------------
 class WhisperHandler:
     def __init__(self, model_name="base", non_english=True, debug=True):
-        self.debug = debug
-        model = model_name
-        if model_name != "large" and not non_english:
-            model = model + ".en"
+        # ... existing code ...
+        self.audio_buffer = np.array([])
+        self.buffer_duration = 3.0  # seconds
         
-        try:
-            self.audio_model = whisper.load_model(model)
-            self.sample_rate = 16000
-        except Exception as e:
-            try:
-                self.audio_model = whisper.load_model("large")
-                self.sample_rate = 16000
-            except Exception as e2:
-                self.audio_model = None
-                self.sample_rate = 16000
+    def add_audio_to_buffer(self, audio_data):
+        """Accumulate audio until we have enough for good transcription"""
+        if audio_data.dtype == np.int16:
+            audio_float = audio_data.astype(np.float32) / 32768.0
+        else:
+            audio_float = audio_data.astype(np.float32)
         
-        self.transcription = []
-        self.lock = threading.Lock()
-        self.last_transcription_time = time.time()
-        self.min_transcription_interval = 0.1
+        self.audio_buffer = np.concatenate([self.audio_buffer, audio_float])
+        
+        # Keep only last N seconds
+        max_samples = int(self.sample_rate * self.buffer_duration)
+        if len(self.audio_buffer) > max_samples:
+            self.audio_buffer = self.audio_buffer[-max_samples:]
+        
+        # Only transcribe if we have enough audio
+        if len(self.audio_buffer) >= int(self.sample_rate * 1.0):
+            return self.transcribe_audio(self.audio_buffer)
+        return None
 
     def transcribe_audio(self, audio_data, language='zh'):
-        min_samples = int(self.sample_rate * 0.5)
+        min_samples = int(self.sample_rate * 2.0)
         
         if audio_data.dtype == np.int16:
             audio_float = audio_data.astype(np.float32) / 32768.0
         else:
             audio_float = audio_data.astype(np.float32)
+        
+        # Add debugging
+        print(f"Audio length: {len(audio_float)/self.sample_rate:.2f}s")
+        print(f"Audio RMS: {np.sqrt(np.mean(audio_float**2)):.6f}")
         
         max_val = np.abs(audio_float).max()
         if max_val > 1.0:
@@ -171,25 +177,12 @@ class WhisperHandler:
         
         target_length = max(min_samples, len(audio_float))
         if len(audio_float) < target_length:
-            audio_float = np.pad(audio_float, (0, target_length - len(audio_float)), 'constant')
-        elif len(audio_float) > self.sample_rate * 30:
-            audio_float = audio_float[-self.sample_rate * 30:]
-        
-        try:
-            result = self.audio_model.transcribe(
-                audio_float, 
-                fp16=torch.cuda.is_available(),
-                language=language,
-                condition_on_previous_text=False,
-            )
-            text = result.get('text', '').strip()
-            
-            if len(text) < 1:
-                return None
-                
-            return text
-        except Exception:
-            return None
+            # Add silence before and after the audio
+            padding_needed = target_length - len(audio_float)
+            before_padding = np.zeros(padding_needed // 2)
+            after_padding = np.zeros(padding_needed - len(before_padding))
+            audio_float = np.concatenate([before_padding, audio_float, after_padding])
+            print(f"Padded audio to {len(audio_float)/self.sample_rate:.2f}s")
 
     def add_transcription_line(self, text):
         with self.lock:
@@ -809,7 +802,7 @@ class DualSAIWithRecording:
             
             # ONE-TIME transcription using the new method
             print("Transcribing recorded audio...")
-            transcription = self.whisper_realtime.transcribe_once(recorded_array, language=self.language)
+            transcription = self.whisper_realtime.add_audio_to_buffer(recorded_array)
             
             # Update status back to ready
             self.status_realtime.set_text("Ready to record")
@@ -1044,7 +1037,9 @@ class DualSAIWithRecording:
         self._setup_control_buttons()
         
         plt.tight_layout()
-        self.fig.patch.set_facecolor('black')
+        plt.show(block=False)  # Don't block execution
+        plt.pause(0.1)  # Small pause to render
+        print("Plot displayed, continuing...")
 
     def _setup_control_buttons(self):
         """Setup control buttons"""
