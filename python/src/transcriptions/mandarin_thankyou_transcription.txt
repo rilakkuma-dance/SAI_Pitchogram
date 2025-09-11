@@ -1,0 +1,11 @@
+Audio file: mandarin_thankyou.mp3
+Detected language: ru
+Transcription model: base
+==================================================
+
+TRANSCRIPTION:
+Си-си!
+
+DETAILED SEGMENTS:
+------------------------------
+[0.00s - 2.00s]: Си-си!
