@@ -727,6 +727,13 @@ class SAIVisualizationWithWav2Vec2:
             if self.wav2vec2_handler.start_recording():
                 self.btn_transcribe.label.set_text('Stop Recognition')
                 print("Started recording for phoneme recognition")
+
+            if hasattr(self, 'similarity_display') and self.similarity_display is not None:
+                self.similarity_display.set_text('')
+            if hasattr(self, 'similarity_rect') and self.similarity_rect is not None:
+                self.similarity_rect.remove()
+                self.similarity_rect = None
+                self.similarity_display = None
         else:
             self.wav2vec2_handler.stop_recording()
             self.btn_transcribe.label.set_text('Start Recognition')
@@ -867,27 +874,28 @@ class SAIVisualizationWithWav2Vec2:
 
             try:
                 detected = getattr(self.wav2vec2_handler, 'result', None)
-                similarity = 0.0  # Initialize similarity with default value
+                similarity = 0.0
 
                 if detected and detected != "no_audio":
-                    # Initialize rectangle + text once
-                    # During _setup_dual_visualization
-                    self.similarity_rect = Rectangle(
-                        (0.1, 0.3), 0.8, 0.4,
-                        transform=self.ax_realtime.transAxes,
-                        facecolor='black', alpha=0.6,
-                        edgecolor='white', linewidth=2
-                    )
-                    self.ax_realtime.add_patch(self.similarity_rect)
+                    # FIXED: Only create similarity display if it doesn't exist
+                    if not hasattr(self, 'similarity_display') or self.similarity_display is None:
+                        self.similarity_rect = Rectangle(
+                            (0.1, 0.3), 0.8, 0.4,
+                            transform=self.ax_realtime.transAxes,
+                            facecolor='black', alpha=0.6,
+                            edgecolor='white', linewidth=2
+                        )
+                        self.ax_realtime.add_patch(self.similarity_rect)
 
-                    self.similarity_display = self.ax_realtime.text(
-                        0.5, 0.5, '',
-                        transform=self.ax_realtime.transAxes,
-                        verticalalignment='center',
-                        horizontalalignment='center',
-                        fontproperties=font_prop,
-                        color='yellow', weight='bold', fontsize=18
-                    )
+                        self.similarity_display = self.ax_realtime.text(
+                            0.5, 0.5, '',
+                            transform=self.ax_realtime.transAxes,
+                            verticalalignment='center',
+                            horizontalalignment='center',
+                            fontproperties=font_prop,
+                            color='yellow', weight='bold', fontsize=18
+                        )
+
                     # Update similarity text
                     if self.similarity_display is not None:
                         similarity_score, _ = self.calculate_similarity(detected, self.target_phonemes)
@@ -978,7 +986,6 @@ class SAIVisualizationWithWav2Vec2:
             elements_to_return.append(self.similarity_display)
 
         return elements_to_return
-
 
 
 
