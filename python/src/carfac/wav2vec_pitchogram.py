@@ -231,13 +231,13 @@ class SimpleWav2Vec2Handler:
         """Record audio continuously"""
         try:
             with self.microphone as source:
+                stream = source.stream
                 while self.is_recording:
-                    try:
-                        audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=3)
-                        audio_data = np.frombuffer(audio.get_raw_data(), np.int16).astype(np.float32) / 32768.0
-                        self.audio_data.append(audio_data)
-                    except sr.WaitTimeoutError:
-                        continue
+                    # Read a small chunk of audio continuously
+                    audio_chunk = stream.read(source.CHUNK)
+                    audio_np = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                    self.audio_data.append(audio_np)
+
         except Exception as e:
             print(f"Recording error: {e}")
 
