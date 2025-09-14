@@ -48,18 +48,20 @@ else:
     font_prop = fm.FontProperties(family='Times New Roman', size=16)
     print("Doulos SIL not found, using Times New Roman fallback")
 
+"""
 # Configure matplotlib
 plt.rcParams.update({
     'font.sans-serif': ['Times New Roman', 'Arial Unicode MS', 'Segoe UI', 'sans-serif'],
     'axes.unicode_minus': False,
     'font.size': 12
 })
+"""
 
 # Wav2Vec2 imports
 try:
     import torch
     import torchaudio
-    from transformers import Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor, Wav2Vec2CTCTokenizer
+    from transformers import Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor, Wav2Vec2PhonemeCTCTokenizer
     WAV2VEC2_AVAILABLE = True
 except ImportError:
     print("Warning: torch/transformers not found. Install with: pip install torch torchaudio transformers")
@@ -147,14 +149,14 @@ class PhonemeAnalyzer:
         
         return 0.0
     
-    def align_phonemes(self, detected, target):
+    def align_phonemes(self, detected: str, target: str):
         """Align detected phonemes with target using dynamic programming"""
         if not detected or not target:
             return [], []
         
         # Convert strings to character lists for phoneme-level analysis
-        det_chars = list(detected)
-        tgt_chars = list(target)
+        det_chars = detected.split()
+        tgt_chars = target.split()
         
         # Use difflib for initial alignment
         matcher = difflib.SequenceMatcher(None, det_chars, tgt_chars)
@@ -187,8 +189,8 @@ class PhonemeAnalyzer:
                     aligned_target.append(tgt_chars[j1 + k])
         
         return aligned_detected, aligned_target
-    
-    def analyze_pronunciation(self, detected, target):
+
+    def analyze_pronunciation(self, detected: str, target: str):
         """Analyze pronunciation and return detailed feedback"""
         if not detected and not target:
             return [], 0.0
@@ -333,7 +335,7 @@ class SimpleWav2Vec2Handler:
                 print(f"Loading Wav2Vec2 {self.model_name}...")
                 self.model = Wav2Vec2ForCTC.from_pretrained(self.model_name)
                 self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(self.model_name)
-                self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(self.model_name)
+                self.tokenizer = Wav2Vec2PhonemeCTCTokenizer.from_pretrained(self.model_name)
                 print("Model loaded successfully")
                 return True
             except Exception as e:
@@ -443,8 +445,9 @@ class SimpleWav2Vec2Handler:
             phonemes = self.tokenizer.batch_decode(predicted_ids)[0]
             
             if phonemes and len(phonemes.strip()) > 0:
+                print(f"Phonemes detected: {phonemes}")
                 self.result = phonemes.strip()
-                print(f"Phonemes detected: {self.result}")
+                print(f"Stripped phonemes detected: {self.result}")
             else:
                 self.result = "no_audio"
                 print("No phonemes detected")
@@ -648,9 +651,8 @@ class SAIVisualizationWithWav2Vec2:
         self.reference_text = None
         self.reference_pronunciation = None
         self.translated_text = None
-        self.target_phonemes = "ɕiɛ5ɕiɛ5"  # Target for xiè xiè
-        
-        
+        self.target_phonemes = "ɕ iɛ5 ɕ iɛ5"  # Target for xiè xiè
+
         # Initialize Wav2Vec2 handler and phoneme analyzer
         self.wav2vec2_handler = SimpleWav2Vec2Handler(model_name=wav2vec2_model)
         self.phoneme_analyzer = PhonemeAnalyzer()
@@ -782,7 +784,7 @@ class SAIVisualizationWithWav2Vec2:
             self.feedback_background.remove()
             self.feedback_background = None
         
-        print("Phoneme feedback cleared")
+        # print("Phoneme feedback cleared")
 
         # Enhanced color scheme with more granular feedback
     def create_phoneme_feedback_display(self, analysis_results, overall_score):
@@ -1040,6 +1042,7 @@ class SAIVisualizationWithWav2Vec2:
             return 0.0, "0.0%"
         
         # Use the phoneme analyzer for detailed analysis
+        print(detected_phonemes, target_phonemes)
         analysis_results, overall_score = self.phoneme_analyzer.analyze_pronunciation(
             detected_phonemes, target_phonemes
         )
@@ -1385,6 +1388,7 @@ class SAIVisualizationWithWav2Vec2:
 
                 if detected and detected != "no_audio":
                     # Use phoneme analyzer for detailed feedback
+                    print(detected, self.target_phonemes)
                     analysis_results, overall_score = self.phoneme_analyzer.analyze_pronunciation(
                         detected, self.target_phonemes
                     )
