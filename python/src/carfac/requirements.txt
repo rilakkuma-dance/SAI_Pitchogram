@@ -8,3 +8,5 @@ argostranslate
 editdistance
 librosa
 git+https://github.com/openai/whisper.git
+transformers
+panphon
