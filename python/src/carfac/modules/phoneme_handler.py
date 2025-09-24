@@ -102,23 +102,11 @@ class PhonemeAnalyzer:
         if not p1 or not p2:
             return 0.0
 
-        try:
-            # Use simple string similarity as fallback if panphon fails
-            dist_measurement = panphon.distance.Distance()
-            
-            # Convert to lists of characters for panphon
-            p1_list = list(p1)
-            p2_list = list(p2)
-            
-            # Calculate phoneme error rate (0.0 = identical, higher = more different)
-            error_rate = dist_measurement.phoneme_error_rate(p1_list, p2_list)
-            
-            # Convert error rate to similarity (clamp between 0 and 1)
-            similarity = max(0.0, 1.0 - error_rate)
-            return similarity
-            
-        except Exception:
-            return difflib.SequenceMatcher(None, p1, p2).ratio()
+        dist_measurement = panphon.distance.Distance()
+        max_len = max(len(p1), len(p2))
+
+        edit_distance = dist_measurement.weighted_feature_edit_distance_div_maxlen([p1], [p2])
+        return (1 - (edit_distance / max_len))
     
     def align_phonemes(self, detected: str, target: str | None = None):
         """Align detected phonemes with target using dynamic programming"""
@@ -190,7 +178,6 @@ class PhonemeAnalyzer:
         aligned_detected, aligned_target = self.align_phonemes(detected, reference)
 
         print(aligned_detected, aligned_target)
-        print(self.phoneme_similarity(detected, reference))
         
         results = []
         total_similarity = 0.0
@@ -237,6 +224,7 @@ class PhonemeAnalyzer:
         print(total_similarity, valid_comparisons)
         
         # Calculate overall score
-        overall_score = total_similarity / max(1, valid_comparisons)
+        overall_score = self.phoneme_similarity(detected, reference)
+        print("Overall_score:", overall_score)
         
         return results, overall_score
