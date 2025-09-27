@@ -284,7 +284,7 @@ class SimpleWav2Vec2Handler:
             if self.result == "no_audio":
                 return "No audio detected", "gray"
             else:
-                return None
+                return f"Transcription: {self.result[:20]}{'...' if len(self.result) > 20 else ''}", "black"
         
         return "Ready to start", "blue"
 
@@ -582,7 +582,7 @@ class SAIVisualizationWithWav2Vec2:
         self.target_phonemes = "ɕiɛɕiɛ"  # Target for xiè xiè
 
         # Initialize Wav2Vec2 handler and phoneme analyzer
-        self.wav2vec2_handler = SimpleWav2Vec2Handler(model_name=wav2vec2_model)
+        self.wav2vec2_handler = SimpleWav2Vec2HandlerWithLogging(model_name=wav2vec2_model)
         self.phoneme_analyzer = PhonemeAnalyzer(self.target_phonemes)
 
         # Most recent results of phoneme analysis
@@ -724,6 +724,11 @@ class SAIVisualizationWithWav2Vec2:
             self.clear_phoneme_feedback()
             
             if not analysis_results:
+                return
+            
+             # Make sure analysis_results is iterable
+            if not hasattr(analysis_results, '__iter__'):
+                print("Analysis results is not iterable")
                 return
             
             # Enhanced color scheme with more granular feedback
@@ -1191,11 +1196,11 @@ class SAIVisualizationWithWav2Vec2:
 
                 if detected and detected != "no_audio":
                     # Get the pre-computed analysis results instead of calling analyze_pronunciation
-                    analysis_results = getattr(self.wav2vec2_handler, 'analysis_results', None)
+                    analysis_results = getattr(self.wav2vec2_handler, 'analysis_results', [])
                     overall_score = getattr(self.wav2vec2_handler, 'overall_score', 0.0)
                     
-                    # Only create display if we have analysis results
-                    if analysis_results is not None:
+                    # Only create display if we have analysis results and it's not empty
+                    if analysis_results and len(analysis_results) > 0:
                         self.create_phoneme_feedback_display(analysis_results, overall_score)
 
             except Exception as e:
@@ -1247,27 +1252,69 @@ class SAIVisualizationWithWav2Vec2:
             self.transcription_file.set_text(reference_display)
 
             status_text, status_color = self.wav2vec2_handler.get_current_status()
-            self.transcription_status.set_text(status_text)
-            self.transcription_status.set_color(status_color)
+            if status_text is not None:  # Only update if get_current_status returns a status
+                self.transcription_status.set_text(status_text)
+                self.transcription_status.set_color(status_color)
 
         except Exception as e:
             print(f"Visualization update error: {e}")
 
-        # Return elements for FuncAnimation
-        elements_to_return = [
-            self.im_realtime, self.im_file,
-            self.line_waveform_realtime, self.line_waveform_file,
-            self.transcription_realtime, self.transcription_file,
-            self.transcription_status
-        ]
-        
-        # Add phoneme feedback displays to return list
-        elements_to_return.extend([d for d in self.phoneme_feedback_displays if d is not None])
-        
-        if self.feedback_background is not None:
-            elements_to_return.append(self.feedback_background)
+        # Return elements for FuncAnimation - with robust error handling
+        try:
+            elements_to_return = []
+            
+            # Add main visualization elements if they exist and are valid
+            main_elements = [
+                ('im_realtime', self.im_realtime),
+                ('im_file', self.im_file),
+                ('line_waveform_realtime', self.line_waveform_realtime),
+                ('line_waveform_file', self.line_waveform_file),
+                ('transcription_realtime', self.transcription_realtime),
+                ('transcription_file', self.transcription_file),
+                ('transcription_status', self.transcription_status)
+            ]
+            
+            for name, elem in main_elements:
+                if elem is not None and hasattr(elem, 'axes'):  # Check if it's a valid matplotlib artist
+                    elements_to_return.append(elem)
+                elif elem is not None:
+                    try:
+                        # Some basic validation that it's a plottable object
+                        if hasattr(elem, 'set_data') or hasattr(elem, 'set_text') or hasattr(elem, 'set_ydata'):
+                            elements_to_return.append(elem)
+                    except:
+                        pass  # Skip invalid elements
+            
+            # Add phoneme feedback displays - with validation
+            if hasattr(self, 'phoneme_feedback_displays') and self.phoneme_feedback_displays:
+                valid_displays = []
+                for display in self.phoneme_feedback_displays:
+                    if display is not None:
+                        try:
+                            # Test if it's a valid matplotlib text object
+                            if hasattr(display, 'set_text') and hasattr(display, 'get_text'):
+                                valid_displays.append(display)
+                        except:
+                            pass  # Skip invalid display elements
+                elements_to_return.extend(valid_displays)
+            
+            # Add feedback background if valid
+            if (hasattr(self, 'feedback_background') and 
+                self.feedback_background is not None and 
+                hasattr(self.feedback_background, 'set_visible')):
+                elements_to_return.append(self.feedback_background)
 
-        return elements_to_return
+            return elements_to_return
+            
+        except Exception as return_error:
+            print(f"Error preparing return elements: {return_error}")
+            # Return minimal safe elements that should always exist
+            safe_elements = []
+            if hasattr(self, 'im_realtime') and self.im_realtime is not None:
+                safe_elements.append(self.im_realtime)
+            if hasattr(self, 'im_file') and self.im_file is not None:
+                safe_elements.append(self.im_file)
+            return safe_elements
 
     def start(self):
         print(f"Target phonemes: {self.target_phonemes}")
@@ -1336,6 +1383,10 @@ class SAIVisualizationWithWav2Vec2:
                 self.p.terminate()
         except:
             pass
+
+            # Log final session summary
+        if hasattr(self.wav2vec2_handler, 'end_session'):
+            self.wav2vec2_handler.end_session()
 
     def stop(self):
         self.cleanup()
@@ -1502,6 +1553,153 @@ class SAIVisualizationWithVoiceSelection(SAIVisualizationWithWav2Vec2):
         if hasattr(self, 'voice_file_display'):
             current_file = os.path.basename(self.voice_selector.get_current_audio_path() or "None")
             self.voice_file_display.set_text(f"File: {current_file}")
+
+# ---------------- Save as txt.file for experiment ----------------
+class PronunciationLogger:
+    """Logger for pronunciation learning scores with timestamps"""
+    
+    def __init__(self, log_directory="pronunciation_logs", log_filename=None):
+        self.log_directory = log_directory
+        
+        # Create logs directory if it doesn't exist
+        if not os.path.exists(self.log_directory):
+            os.makedirs(self.log_directory)
+        
+        # Set default filename with date if not provided
+        if log_filename is None:
+            today = datetime.now().strftime("%Y-%m-%d")
+            log_filename = f"pronunciation_scores_{today}.txt"
+        
+        self.log_file_path = os.path.join(self.log_directory, log_filename)
+        
+        # Initialize log file with header if it's new
+        self._initialize_log_file()
+    
+    def _initialize_log_file(self):
+        """Initialize the log file with header if it doesn't exist"""
+        if not os.path.exists(self.log_file_path):
+            with open(self.log_file_path, 'w', encoding='utf-8') as f:
+                f.write("=== Pronunciation Learning Log ===\n")
+                f.write(f"Log started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("Format: [Timestamp] Target -> Detected | Score: X.XX | Details\n")
+                f.write("-" * 60 + "\n\n")
+    
+    def log_score(self, target_phonemes, detected_phonemes, overall_score, analysis_results=None):
+        """Log a pronunciation attempt with score and details"""
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Format the main entry
+            log_entry = f"[{timestamp}] {target_phonemes} -> {detected_phonemes} | Score: {overall_score:.2f}\n"
+            
+            # Add detailed analysis if provided
+            if analysis_results and len(analysis_results) > 0:
+                log_entry += "  Details: "
+                phoneme_details = []
+                for result in analysis_results:
+                    target = result.get('target', '?')
+                    detected = result.get('detected', '?')
+                    status = result.get('status', 'unknown')
+                    similarity = result.get('similarity', 0)
+                    
+                    if target and detected:
+                        if status == 'correct':
+                            phoneme_details.append(f"{target}✓")
+                        elif status == 'close':
+                            phoneme_details.append(f"{target}~{detected}")
+                        elif status == 'incorrect':
+                            phoneme_details.append(f"{target}✗{detected}")
+                        elif status == 'missing':
+                            phoneme_details.append(f"{target}?")
+                        elif status == 'extra':
+                            phoneme_details.append(f"+{detected}")
+                
+                log_entry += " | ".join(phoneme_details) + "\n"
+            
+            log_entry += "\n"  # Add blank line for readability
+            
+            # Write to file
+            with open(self.log_file_path, 'a', encoding='utf-8') as f:
+                f.write(log_entry)
+            
+            print(f"Score logged to: {self.log_file_path}")
+            
+        except Exception as e:
+            print(f"Error logging score: {e}")
+    
+    def log_session_summary(self, session_scores):
+        """Log a summary of the current session"""
+        try:
+            if not session_scores:
+                return
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            avg_score = sum(session_scores) / len(session_scores)
+            max_score = max(session_scores)
+            attempts = len(session_scores)
+            
+            summary = f"\n--- Session Summary [{timestamp}] ---\n"
+            summary += f"Attempts: {attempts}\n"
+            summary += f"Average Score: {avg_score:.2f}\n"
+            summary += f"Best Score: {max_score:.2f}\n"
+            summary += f"Progress: {session_scores}\n"
+            summary += "-" * 40 + "\n\n"
+            
+            with open(self.log_file_path, 'a', encoding='utf-8') as f:
+                f.write(summary)
+            
+            print(f"Session summary logged")
+            
+        except Exception as e:
+            print(f"Error logging session summary: {e}")
+    
+    def get_log_file_path(self):
+        """Get the current log file path"""
+        return self.log_file_path
+    
+class SimpleWav2Vec2HandlerWithLogging(SimpleWav2Vec2Handler):
+    """Enhanced Wav2Vec2 handler with pronunciation logging"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Initialize logger
+        self.logger = PronunciationLogger()
+        self.session_scores = []  # Track scores for this session
+        
+        print(f"Pronunciation logging enabled: {self.logger.get_log_file_path()}")
+    
+    def _process_audio(self):
+        """Override to add logging after analysis"""
+        # Call parent method
+        super()._process_audio()
+        
+        # Log the results if we have them
+        if (hasattr(self, 'result') and self.result and 
+            self.result not in ["no_audio", "processing_error"] and
+            hasattr(self, 'analysis_results') and self.analysis_results and
+            hasattr(self, 'overall_score')):
+            
+            # Log this attempt
+            self.logger.log_score(
+                target_phonemes=self.target_phonemes,
+                detected_phonemes=self.result,
+                overall_score=self.overall_score,
+                analysis_results=self.analysis_results
+            )
+            
+            # Add to session tracking
+            self.session_scores.append(self.overall_score)
+            
+            # Log session summary every 5 attempts
+            if len(self.session_scores) % 5 == 0:
+                self.logger.log_session_summary(self.session_scores)
+    
+    def end_session(self):
+        """Call this when ending a practice session"""
+        if self.session_scores:
+            self.logger.log_session_summary(self.session_scores)
+            print(f"Final session summary logged with {len(self.session_scores)} attempts")
 
 # ---------------- Main ----------------
 def main_with_voice_selection():

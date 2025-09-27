@@ -1,0 +1,19 @@
+=== Pronunciation Learning Log ===
+Log started: 2025-09-27 12:36:36
+Format: [Timestamp] Target -> Detected | Score: X.XX | Details
+------------------------------------------------------------
+
+[2025-09-27 12:36:49] ɕiɛɕiɛ -> dandantanda | Score: 0.60
+  Details: ɕ✗d | i✗a | ɛ✗n | ɕ✗d | i✗a | ɛ✗n
+
+[2025-09-27 12:37:02] ɕiɛɕiɛ -> naːdɔdɔntʌt | Score: 0.60
+  Details: ɕ✗n | i✗a | ɛ✗ː | ɕ✗d | i✗ɔ | ɛ✗d
+
+
+--- Session Summary [2025-09-27 12:37:04] ---
+Attempts: 2
+Average Score: 0.60
+Best Score: 0.60
+Progress: [0.6033057851239669, 0.6045454545454545]
+----------------------------------------
+
