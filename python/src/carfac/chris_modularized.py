@@ -5,11 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.font_manager as fm
 from matplotlib.widgets import Button
-from matplotlib.patches import Rectangle
 import threading
 import queue
-import time
-from dataclasses import dataclass
 import librosa
 import argparse
 import os
@@ -17,8 +14,7 @@ import sounddevice as sd
 import wave
 from datetime import datetime
 import speech_recognition as sr
-from matplotlib.patches import FancyBboxPatch
-import unicodedata
+
 
 # Font setup
 def get_font_path():
@@ -288,7 +284,7 @@ class SimpleWav2Vec2Handler:
             if self.result == "no_audio":
                 return "No audio detected", "gray"
             else:
-                return f"Phonemes: {self.result}", "green"
+                return None
         
         return "Ready to start", "blue"
 
@@ -351,11 +347,6 @@ class SimpleWav2Vec2Handler:
             
             # Combine all audio
             complete_audio = np.concatenate(self.audio_data)
-            
-            # Save audio file
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"recording_{timestamp}.wav"
-            self._save_audio(complete_audio, filename)
             
             # Process with manual components
             print(f"Processing with manual components")
@@ -888,19 +879,6 @@ class SAIVisualizationWithWav2Vec2:
                 )
                 self.phoneme_feedback_displays.append(legend_display)
             
-            # Instructions
-            instructions = "Press 'C' to clear feedback | Colors show pronunciation accuracy"
-            instr_display = self.ax_realtime.text(
-                0.5, 0.32,
-                instructions,
-                transform=self.ax_realtime.transAxes,
-                horizontalalignment='center',
-                verticalalignment='center',
-                fontsize=9, style='italic',
-                color='lightgray'
-            )
-            self.phoneme_feedback_displays.append(instr_display)
-            
         except Exception as e:
             print(f"Error creating phoneme feedback display: {e}")
             import traceback
@@ -949,7 +927,7 @@ class SAIVisualizationWithWav2Vec2:
         self.reference_text = phonemes.strip()
         self.reference_pronunciation = pronunciation
         self.translated_text = translation.strip()
-        print(f"Reference: {self.reference_text} ({self.reference_pronunciation}) - {self.translated_text}")
+        print(f"Target word: {self.reference_text} ({self.reference_pronunciation}) - {self.translated_text}")
         print(f"Target phonemes for similarity: {self.target_phonemes}")
 
     def _setup_audio_playback(self):
@@ -1069,7 +1047,7 @@ class SAIVisualizationWithWav2Vec2:
                 self.clear_phoneme_feedback()
         else:
             self.wav2vec2_handler.stop_recording()
-            self.btn_transcribe.label.set_text('Start Recognition')
+            self.btn_transcribe.label.set_text('check your pronunciation score')
             print("Stopped recording")
 
     def _setup_dual_visualization(self):
@@ -1093,15 +1071,12 @@ class SAIVisualizationWithWav2Vec2:
             self.vis_realtime.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, 200, 0, 200]
         )
-        self.ax_realtime.set_title("Live Microphone SAI + Phoneme Feedback", color='white', fontsize=14)
         self.ax_realtime.axis('off')
         
         self.im_file = self.ax_file.imshow(
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, 200, 0, 200]
         )
-        file_title = f"Reference: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file'}"
-        self.ax_file.set_title(file_title, color='white', fontsize=14)
         self.ax_file.axis('off')
         
         # Setup waveform plots
@@ -1113,7 +1088,6 @@ class SAIVisualizationWithWav2Vec2:
         )
         self.ax_waveform_realtime.set_xlim(0, waveform_length / self.sample_rate)
         self.ax_waveform_realtime.set_ylim(-1, 1)
-        self.ax_waveform_realtime.set_title("Live Waveform", color='white', fontsize=10)
         self.ax_waveform_realtime.tick_params(colors='white', labelsize=8)
         self.ax_waveform_realtime.set_facecolor('black')
         
@@ -1122,7 +1096,6 @@ class SAIVisualizationWithWav2Vec2:
         )
         self.ax_waveform_file.set_xlim(0, waveform_length / self.sample_rate)
         self.ax_waveform_file.set_ylim(-1, 1)
-        self.ax_waveform_file.set_title("Reference Waveform", color='white', fontsize=10)
         self.ax_waveform_file.tick_params(colors='white', labelsize=8)
         self.ax_waveform_file.set_facecolor('black')
         
@@ -1131,7 +1104,7 @@ class SAIVisualizationWithWav2Vec2:
         # Text overlays
         print("DEBUG: Creating text overlays...")
         self.transcription_realtime = self.ax_realtime.text(
-            0.02, 0.02, 'Live SAI + Per-Phoneme Feedback', 
+            0.02, 0.02, 'Live SA', 
             transform=self.ax_realtime.transAxes,
             verticalalignment='bottom', fontsize=12, color='lime', weight='bold',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
@@ -1156,69 +1129,29 @@ class SAIVisualizationWithWav2Vec2:
         # Control area
         self.ax_controls = self.fig.add_subplot(gs[10:12, :])
         self.ax_controls.axis('off')
-
-        # SAI Speed control buttons
-        self.ax_sai_slower = plt.axes([0.02, 0.02, 0.08, 0.05])
-        self.btn_sai_slower = Button(self.ax_sai_slower, 'SAI Slower', color='lightcoral', hovercolor='red')
-        self.btn_sai_slower.on_clicked(self.decrease_sai_speed)
-
-        self.ax_sai_faster = plt.axes([0.12, 0.02, 0.08, 0.05])
-        self.btn_sai_faster = Button(self.ax_sai_faster, 'SAI Faster', color='lightblue', hovercolor='blue')
-        self.btn_sai_faster.on_clicked(self.increase_sai_speed)
-
-        # Audio speed buttons
-        self.ax_audio_slower = plt.axes([0.22, 0.02, 0.08, 0.05])
-        self.btn_audio_slower = Button(self.ax_audio_slower, 'Audio Slower', color='lightyellow', hovercolor='yellow')
-        self.btn_audio_slower.on_clicked(self.decrease_audio_speed)
-
-        self.ax_audio_faster = plt.axes([0.32, 0.02, 0.08, 0.05])
-        self.btn_audio_faster = Button(self.ax_audio_faster, 'Audio Faster', color='lightgreen', hovercolor='green')
-        self.btn_audio_faster.on_clicked(self.increase_audio_speed)
         
-        # Main control buttons
-        self.ax_playback = plt.axes([0.45, 0.02, 0.12, 0.05])
-        self.btn_playback = Button(self.ax_playback, 'Play Reference', 
+        # IMPROVED BUTTON LAYOUT
+        # Main control buttons - better spacing and positioning
+        button_width = 0.12
+        button_height = 0.04
+        bottom_margin = 0.02
+        top_row_y = bottom_margin + button_height + 0.01  # Top row of buttons
+        bottom_row_y = bottom_margin  # Bottom row of buttons
+        
+        # Top row - Main functionality buttons
+        self.ax_playback = plt.axes([0.35, top_row_y, button_width, button_height])
+        self.btn_playback = Button(self.ax_playback, 'Play Audio', 
                                 color='lightgreen', hovercolor='green')
         self.btn_playback.on_clicked(self.toggle_playback)
         
-        self.ax_transcribe = plt.axes([0.60, 0.02, 0.12, 0.05])
-        self.btn_transcribe = Button(self.ax_transcribe, 'Start Recognition', 
+        self.ax_transcribe = plt.axes([0.50, top_row_y, button_width + 0.03, button_height])
+        self.btn_transcribe = Button(self.ax_transcribe, 'Check Pronunciation Score', 
                                     color='lightblue', hovercolor='blue')
         self.btn_transcribe.on_clicked(self.toggle_phoneme_recognition)
-        
-        # Clear feedback button
-        self.ax_clear = plt.axes([0.75, 0.02, 0.08, 0.05])
-        self.btn_clear = Button(self.ax_clear, 'Clear (C)', color='lightgray', hovercolor='gray')
-        self.btn_clear.on_clicked(lambda x: self.clear_phoneme_feedback())
 
-        # Speed displays
-        self.sai_speed_display = self.ax_controls.text(
-            0.1, 0.8, f'SAI Speed: {self.sai_speed:.1f}x',
-            transform=self.ax_controls.transAxes,
-            fontsize=10, color='cyan', weight='bold'
-        )
-        
-        self.audio_speed_display = self.ax_controls.text(
-            0.1, 0.6, f'Audio Speed: {self.playback_speed:.1f}x',
-            transform=self.ax_controls.transAxes,
-            fontsize=10, color='yellow', weight='bold'
-        )
-        
-        # Keyboard shortcut help
-        shortcuts_text = "Keys: ↑/↓ SAI speed, ←/→ audio speed, R reset, C clear feedback"
-        self.ax_controls.text(
-            0.5, 0.4, shortcuts_text,
-            transform=self.ax_controls.transAxes,
-            fontsize=9, color='lightgray', style='italic',
-            horizontalalignment='center'
-        )
-        
-        # Enable keyboard shortcuts
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
-        
         # Use subplots_adjust instead of tight_layout to avoid compatibility issues
         try:
-            plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.12, hspace=0.3, wspace=0.3)
+            plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.15, hspace=0.3, wspace=0.3)
         except Exception as e:
             print(f"Layout adjustment warning: {e}")
         
@@ -1229,11 +1162,11 @@ class SAIVisualizationWithWav2Vec2:
         if self.audio_playback_enabled and self.audio_output_stream:
             if self.audio_output_stream.active:
                 self.audio_output_stream.stop()
-                self.btn_playback.label.set_text('Play Reference')
+                self.btn_playback.label.set_text('Play Audio')
                 print("Reference playback stopped")
             else:
                 self.audio_output_stream.start()
-                self.btn_playback.label.set_text('Stop Reference')
+                self.btn_playback.label.set_text('Stop Audio')
                 print("Reference playback started")
         else:
             print("Reference playback not available")
@@ -1308,7 +1241,7 @@ class SAIVisualizationWithWav2Vec2:
             # Update text displays
             reference_display = ''
             if self.reference_pronunciation:
-                reference_display = f"Reference: {self.reference_pronunciation}"
+                reference_display = f"Target word: {self.reference_pronunciation}"
             if self.translated_text and self.translated_text != 'audio file':
                 reference_display += f" - {self.translated_text}"
             self.transcription_file.set_text(reference_display)
@@ -1408,11 +1341,178 @@ class SAIVisualizationWithWav2Vec2:
         self.cleanup()
         plt.close('all')
 
+# ---------------- voice selector between male and female ----------------
+class VoiceSelector:
+    """Simple voice selector for switching between pre-recorded male/female audio files"""
+    
+    def __init__(self, male_audio_path, female_audio_path):
+        self.male_audio_path = male_audio_path
+        self.female_audio_path = female_audio_path
+        self.current_voice = "female"  # Default
+        
+        # Check if files exist
+        self.male_available = os.path.exists(male_audio_path) if male_audio_path else False
+        self.female_available = os.path.exists(female_audio_path) if female_audio_path else False
+        
+        print(f"Voice files - Male: {self.male_available}, Female: {self.female_available}")
+    
+    def get_current_audio_path(self):
+        """Get path of currently selected voice"""
+        if self.current_voice == "male" and self.male_available:
+            return self.male_audio_path
+        elif self.current_voice == "female" and self.female_available:
+            return self.female_audio_path
+        else:
+            return None
+    
+    def switch_to_male(self):
+        """Switch to male voice"""
+        if self.male_available:
+            self.current_voice = "male"
+            return self.male_audio_path
+        return None
+    
+    def switch_to_female(self):
+        """Switch to female voice"""
+        if self.female_available:
+            self.current_voice = "female"
+            return self.female_audio_path
+        return None
+    
+class SAIVisualizationWithVoiceSelection(SAIVisualizationWithWav2Vec2):
+    """Enhanced version with voice file switching"""
+    
+    def __init__(self, male_audio_path=None, female_audio_path=None, *args, **kwargs):
+        # Initialize voice selector
+        self.voice_selector = VoiceSelector(male_audio_path, female_audio_path)
+        
+        # Set initial audio file from voice selector
+        initial_audio = self.voice_selector.get_current_audio_path()
+        if initial_audio:
+            kwargs['audio_file_path'] = initial_audio
+        
+        # Call parent constructor
+        super().__init__(*args, **kwargs)
+    
+    def _setup_dual_visualization(self):
+        """Override to add voice selection buttons"""
+        print("DEBUG: Starting _setup_dual_visualization with voice selection")
+        
+        # Call parent setup first
+        super()._setup_dual_visualization()
+        
+        # Add voice selection buttons
+        self._add_voice_selection_buttons()
+    
+    def _add_voice_selection_buttons(self):
+        """Add male/female voice selection buttons - improved positioning"""
+        # Voice selection buttons - positioned in bottom row, right side
+        voice_button_width = 0.07
+        voice_button_height = 0.04
+        voice_start_x = 0.80
+        voice_y = 0.07
+        
+        # Male voice button
+        male_color = 'lightcyan' if self.voice_selector.current_voice == 'male' else 'lightgray'
+        male_enabled = self.voice_selector.male_available
+        
+        self.ax_voice_male = plt.axes([voice_start_x, voice_y, voice_button_width, voice_button_height])
+        self.btn_voice_male = Button(self.ax_voice_male, 'Male', 
+                                    color=male_color if male_enabled else 'darkgray',
+                                    hovercolor='cyan' if male_enabled else 'darkgray')
+        if male_enabled:
+            self.btn_voice_male.on_clicked(self.select_male_voice)
+        
+        # Female voice button  
+        female_color = 'lightpink' if self.voice_selector.current_voice == 'female' else 'lightgray'
+        female_enabled = self.voice_selector.female_available
+        
+        self.ax_voice_female = plt.axes([voice_start_x + voice_button_width + 0.01, voice_y, voice_button_width, voice_button_height])
+        self.btn_voice_female = Button(self.ax_voice_female, 'Female',
+                                    color=female_color if female_enabled else 'darkgray', 
+                                    hovercolor='pink' if female_enabled else 'darkgray')
+        if female_enabled:
+            self.btn_voice_female.on_clicked(self.select_female_voice)
+        
+        # Voice status display - positioned above voice buttons
+        voice_status = f"Voice: {self.voice_selector.current_voice.title()}"
+        self.voice_status_display = self.ax_controls.text(
+            0.91, 0.05, voice_status,
+            transform=self.ax_controls.transAxes,
+            fontsize=10, color='lightgreen', weight='bold', horizontalalignment='center'
+        )
+    
+    def select_male_voice(self, event=None):
+        """Switch to male voice"""
+        new_audio_path = self.voice_selector.switch_to_male()
+        if new_audio_path:
+            self._switch_audio_file(new_audio_path)
+            self._update_voice_displays()
+            print(f"Switched to male voice: {os.path.basename(new_audio_path)}")
+    
+    def select_female_voice(self, event=None):
+        """Switch to female voice"""
+        new_audio_path = self.voice_selector.switch_to_female()
+        if new_audio_path:
+            self._switch_audio_file(new_audio_path)
+            self._update_voice_displays()
+            print(f"Switched to female voice: {os.path.basename(new_audio_path)}")
+    
+    def _switch_audio_file(self, new_audio_path):
+        """Switch to a different audio file"""
+        try:
+            # Stop current playback
+            if self.audio_output_stream and self.audio_output_stream.active:
+                self.audio_output_stream.stop()
+            
+            # Load new audio
+            self.audio_file_path = new_audio_path
+            self._load_audio_file()
+            
+            # Reset playback position
+            self.current_position = 0
+            self.playback_position = 0.0
+            
+        except Exception as e:
+            print(f"Error switching audio file: {e}")
+    
+    def _update_voice_displays(self):
+        """Update voice selection button colors and status"""
+        # Update button colors
+        current_voice = self.voice_selector.current_voice
+        
+        # Male button
+        if hasattr(self, 'btn_voice_male'):
+            male_color = 'lightcyan' if current_voice == 'male' else 'lightgray'
+            self.btn_voice_male.color = male_color
+            self.btn_voice_male.ax.set_facecolor(male_color)
+        
+        # Female button
+        if hasattr(self, 'btn_voice_female'):
+            female_color = 'lightpink' if current_voice == 'female' else 'lightgray'
+            self.btn_voice_female.color = female_color
+            self.btn_voice_female.ax.set_facecolor(female_color)
+        
+        # Update status text
+        if hasattr(self, 'voice_status_display'):
+            voice_status = f"Voice: {current_voice.title()}"
+            self.voice_status_display.set_text(voice_status)
+        
+        # Update file info
+        if hasattr(self, 'voice_file_display'):
+            current_file = os.path.basename(self.voice_selector.get_current_audio_path() or "None")
+            self.voice_file_display.set_text(f"File: {current_file}")
+
 # ---------------- Main ----------------
-def main():
-    parser = argparse.ArgumentParser(description='SAI Visualization + Wav2Vec2 Phoneme Recognition + Per-Phoneme Color Feedback + Waveforms')
-    parser.add_argument('--audio-file', default='reference/mandarin_thankyou.mp3', 
-                        help='Path to reference audio file')
+def main_with_voice_selection():
+    """Enhanced main function with voice file selection"""
+    parser = argparse.ArgumentParser(description='SAI Visualization + Voice File Selection + Phoneme Recognition')
+    
+    # Voice selection arguments
+    parser.add_argument('--male-audio', help='Path to male voice audio file')
+    parser.add_argument('--female-audio', help='Path to female voice audio file') 
+    
+    # Original arguments
     parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size for SAI')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate')
     parser.add_argument('--sai-width', type=int, default=400, help='SAI width')
@@ -1421,45 +1521,112 @@ def main():
     parser.add_argument('--wav2vec2-model', default='facebook/wav2vec2-xlsr-53-espeak-cv-ft',
                         help='Wav2Vec2 model for phoneme recognition')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--default-voice', choices=['male', 'female'], default='female',
+                        help='Default voice to start with')
     
     args = parser.parse_args()
     
-    if args.audio_file and not os.path.exists(args.audio_file):
-        print(f"Warning: Audio file '{args.audio_file}' not found. Proceeding without reference audio.")
-        args.audio_file = None
+    # Check if voice files exist
+    male_exists = args.male_audio and os.path.exists(args.male_audio)
+    female_exists = args.female_audio and os.path.exists(args.female_audio)
+    
+    if not male_exists and args.male_audio:
+        print(f"Warning: Male audio file '{args.male_audio}' not found.")
+    
+    if not female_exists and args.female_audio:
+        print(f"Warning: Female audio file '{args.female_audio}' not found.")
+    
+    if not male_exists and not female_exists:
+        print("Error: No valid voice audio files found.")
+        print("Please provide audio files using:")
+        print("  --male-audio 'path/to/male_voice.wav'")
+        print("  --female-audio 'path/to/female_voice.wav'")
+        return 1
 
-    # Initialize SAI visualization with Wav2Vec2 and per-phoneme feedback
-    sai_vis = SAIVisualizationWithWav2Vec2(
-        audio_file_path=args.audio_file,
-        chunk_size=args.chunk_size,
-        sample_rate=args.sample_rate,
-        sai_width=args.sai_width,
-        debug=args.debug,
-        playback_speed=args.speed,
-        loop_audio=not args.no_loop,
-        wav2vec2_model=args.wav2vec2_model
-    )
+    print(f"Loading voice files:")
+    if male_exists:
+        print(f"  Male: {args.male_audio}")
+    if female_exists:
+        print(f"  Female: {args.female_audio}")
 
+    # Create visualization with voice selection
     try:
+        sai_vis = SAIVisualizationWithVoiceSelection(
+            male_audio_path=args.male_audio if male_exists else None,
+            female_audio_path=args.female_audio if female_exists else None,
+            chunk_size=args.chunk_size,
+            sample_rate=args.sample_rate,
+            sai_width=args.sai_width,
+            debug=args.debug,
+            playback_speed=args.speed,
+            loop_audio=not args.no_loop,
+            wav2vec2_model=args.wav2vec2_model
+        )
+        
+        # Set default voice (prefer the one that exists)
+        if args.default_voice == 'male' and male_exists:
+            sai_vis.select_male_voice()
+        elif args.default_voice == 'female' and female_exists:
+            sai_vis.select_female_voice()
+        elif male_exists:
+            sai_vis.select_male_voice()
+        elif female_exists:
+            sai_vis.select_female_voice()
+
+        print(f"Starting with {sai_vis.voice_selector.current_voice} voice")
         sai_vis.start()
+        
     except KeyboardInterrupt:
         print("Interrupted by user")
+    except Exception as e:
+        print(f"Error starting visualization: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
     finally:
-        sai_vis.stop()
+        if 'sai_vis' in locals():
+            sai_vis.stop()
         print("Visualization stopped cleanly")
+    
+    return 0
 
+# ---------------- Main Entry Point ----------------
 if __name__ == "__main__":
     import sys
     import os
     
-    if len(sys.argv) == 1:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        default_audio = os.path.join(script_dir, 'reference', 'mandarin_thankyou.mp3')
-        
-        if os.path.exists(default_audio):
-            sys.argv.append('--audio-file')
-            sys.argv.append(default_audio)
-        else:
-            print("No default audio file found. Starting with microphone SAI visualization only.")
+    # Set default voice file paths (CHANGE THESE TO YOUR ACTUAL FILE PATHS)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_male = os.path.join(script_dir, "reference", "mandarin_thankyou.mp3")
+    default_female = os.path.join(script_dir, "reference", "mandarin_mu.mp3")
     
-    sys.exit(main() or 0)
+    # Add default arguments if not provided via command line
+    if '--male-audio' not in sys.argv and os.path.exists(default_male):
+        sys.argv.extend(['--male-audio', default_male])
+    
+    if '--female-audio' not in sys.argv and os.path.exists(default_female):
+        sys.argv.extend(['--female-audio', default_female])
+    
+    # If no voice files found, show help
+    if '--male-audio' not in sys.argv and '--female-audio' not in sys.argv:
+        print("No voice audio files found.")
+        print("Please either:")
+        print("1. Put your audio files in a 'voices' folder next to this script:")
+        print(f"   {default_male}")
+        print(f"   {default_female}")
+        print("2. Or run with command line arguments:")
+        print("   python chris_modularized.py --male-audio 'path/to/male.wav' --female-audio 'path/to/female.wav'")
+        sys.exit(1)
+    
+    # Run the enhanced version
+    sys.exit(main_with_voice_selection() or 0)
+
+
+# Activate the virtual environment where you installed the packages
+#.\carfac\carfac_env_windows\Scripts\Activate.ps1
+
+# Then set the Python path
+#$env:PYTHONPATH = "C:\Users\maruk\carfac-SAI\python\src;$env:PYTHONPATH"
+
+# Now run the script
+#python carfac\chris_modularized.py
