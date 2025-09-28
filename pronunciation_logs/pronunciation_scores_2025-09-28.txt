@@ -1,0 +1,27 @@
+=== Pronunciation Learning Log ===
+Log started: 2025-09-28 14:24:08
+Format: [Timestamp] Target -> Detected | Score: X.XX | Details
+------------------------------------------------------------
+
+[2025-09-28 14:24:30] ɕiɛɕiɛ -> nadad | Score: 0.25
+  Details: ɕ✗n | i✗a | ɛ✗d | ɕ✗a | i✗d
+
+
+--- Session Summary [2025-09-28 14:24:36] ---
+Attempts: 1
+Average Score: 0.25
+Best Score: 0.25
+Progress: [0.25]
+----------------------------------------
+
+[2025-09-28 14:29:02] ɕiɛɕiɛ -> nadud | Score: 0.25
+  Details: ɕ✗n | i✗a | ɛ✗d | ɕ✗u | i✗d
+
+
+--- Session Summary [2025-09-28 14:29:06] ---
+Attempts: 1
+Average Score: 0.25
+Best Score: 0.25
+Progress: [0.25]
+----------------------------------------
+

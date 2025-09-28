@@ -1805,17 +1805,6 @@ if __name__ == "__main__":
     if '--female-audio' not in sys.argv and os.path.exists(default_female):
         sys.argv.extend(['--female-audio', default_female])
     
-    # If no voice files found, show help
-    if '--male-audio' not in sys.argv and '--female-audio' not in sys.argv:
-        print("No voice audio files found.")
-        print("Please either:")
-        print("1. Put your audio files in a 'voices' folder next to this script:")
-        print(f"   {default_male}")
-        print(f"   {default_female}")
-        print("2. Or run with command line arguments:")
-        print("   python chris_modularized.py --male-audio 'path/to/male.wav' --female-audio 'path/to/female.wav'")
-        sys.exit(1)
-    
     # Run the enhanced version
     sys.exit(main_with_voice_selection() or 0)
 
