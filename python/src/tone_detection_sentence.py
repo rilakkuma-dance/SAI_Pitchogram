@@ -4,7 +4,6 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 import librosa
 import os
 from typing import List, Dict, Optional
-import re
 
 try:
     from pypinyin import pinyin, Style
@@ -229,99 +228,10 @@ class Wav2Vec2PypinyinToneClassifier:
         
         return results
     
-    def segment_with_expected_syllables(self, char_timings, expected_syllables):
-        """Create syllable boundaries using expected syllables and character timing"""
-        if not char_timings or not expected_syllables:
-            return []
-        
-        boundaries = []
-        
-        if len(char_timings) == len(expected_syllables):
-            # Perfect match - use character timings directly
-            for char_timing, expected_syllable in zip(char_timings, expected_syllables):
-                char = char_timing['char']
-                tone, pinyin_base = self.get_tone_from_pypinyin(char)
-                
-                boundaries.append({
-                    'syllable': expected_syllable,
-                    'character': char,
-                    'pinyin_from_char': pinyin_base,
-                    'predicted_tone': tone,
-                    'start_time': char_timing['start_time'],
-                    'end_time': char_timing['end_time'],
-                    'duration': char_timing['duration'],
-                    'method': 'guided_pypinyin'
-                })
-        
-        elif len(char_timings) > len(expected_syllables):
-            # More characters than expected syllables - group characters
-            chars_per_syllable = len(char_timings) // len(expected_syllables)
-            
-            for i, expected_syllable in enumerate(expected_syllables):
-                start_idx = i * chars_per_syllable
-                end_idx = (i + 1) * chars_per_syllable if i < len(expected_syllables) - 1 else len(char_timings)
-                
-                # Get timing from first and last character in group
-                start_time = char_timings[start_idx]['start_time']
-                end_time = char_timings[end_idx - 1]['end_time']
-                
-                # Get characters in this group
-                chars_in_group = [char_timings[j]['char'] for j in range(start_idx, end_idx)]
-                main_char = chars_in_group[0]  # Use first character for tone lookup
-                
-                tone, pinyin_base = self.get_tone_from_pypinyin(main_char)
-                
-                boundaries.append({
-                    'syllable': expected_syllable,
-                    'character': ''.join(chars_in_group),
-                    'main_character': main_char,
-                    'pinyin_from_char': pinyin_base,
-                    'predicted_tone': tone,
-                    'start_time': start_time,
-                    'end_time': end_time,
-                    'duration': end_time - start_time,
-                    'method': 'grouped_pypinyin'
-                })
-        
-        else:
-            # Fewer characters than expected syllables - distribute proportionally
-            if char_timings:
-                total_start = char_timings[0]['start_time']
-                total_end = char_timings[-1]['end_time']
-                total_duration = total_end - total_start
-                syllable_duration = total_duration / len(expected_syllables)
-                
-                for i, expected_syllable in enumerate(expected_syllables):
-                    start_time = total_start + i * syllable_duration
-                    end_time = start_time + syllable_duration
-                    
-                    # Find closest character for this time range
-                    mid_time = (start_time + end_time) / 2
-                    closest_char_idx = min(range(len(char_timings)),
-                                         key=lambda j: abs(char_timings[j]['start_time'] - mid_time))
-                    closest_char = char_timings[closest_char_idx]['char']
-                    
-                    tone, pinyin_base = self.get_tone_from_pypinyin(closest_char)
-                    
-                    boundaries.append({
-                        'syllable': expected_syllable,
-                        'character': closest_char,
-                        'pinyin_from_char': pinyin_base,
-                        'predicted_tone': tone,
-                        'start_time': start_time,
-                        'end_time': end_time,
-                        'duration': syllable_duration,
-                        'method': 'distributed_pypinyin'
-                    })
-        
-        return boundaries
-    
-    def predict_tones(self, audio_path, expected_syllables=None, show_alternatives=False):
+    def predict_tones(self, audio_path, show_alternatives=False):
         """Main function: detect characters and classify tones"""
         
         print(f"Processing: {os.path.basename(audio_path)}")
-        if expected_syllables:
-            print(f"Expected syllables: {expected_syllables}")
         
         # Step 1: Detect characters with timing
         transcription, char_timings = self.detect_characters_with_timing(audio_path)
@@ -332,13 +242,8 @@ class Wav2Vec2PypinyinToneClassifier:
         
         print(f"Detected characters: {[ct['char'] for ct in char_timings]}")
         
-        # Step 2: Classify tones
-        if expected_syllables:
-            # Use expected syllables to guide segmentation
-            results = self.segment_with_expected_syllables(char_timings, expected_syllables)
-        else:
-            # Direct character-to-tone mapping
-            results = self.classify_tones_from_characters(char_timings, show_alternatives)
+        # Step 2: Classify tones using direct character-to-tone mapping
+        results = self.classify_tones_from_characters(char_timings, show_alternatives)
         
         return results
     
@@ -415,62 +320,9 @@ class Wav2Vec2PypinyinToneClassifier:
             output.append(f"Success rate: {len(successful_results)}/{len(results)} characters")
         
         return "\n".join(output)
-    
-    def interactive_correction(self, results):
-        """Allow user to correct misrecognized characters"""
-        print("\nInteractive correction mode:")
-        print("If any characters were misrecognized, you can correct them.")
-        print("Press Enter to skip correction for a character.")
-        
-        corrected_results = []
-        
-        for result in results:
-            char = result['character']
-            current_tone = result['predicted_tone']
-            
-            print(f"\nCharacter: {char}")
-            if current_tone is not None:
-                tone_str = f"T{current_tone}" if current_tone > 0 else "Neutral"
-                print(f"Current tone: {tone_str}")
-            else:
-                print("Current tone: UNKNOWN")
-            
-            # Show alternatives if available
-            if 'alternatives' in result:
-                print("Available pronunciations:")
-                for i, alt in enumerate(result['alternatives']):
-                    alt_tone = alt['tone']
-                    tone_str = f"T{alt_tone}" if alt_tone > 0 else "Neutral"
-                    print(f"  {i+1}. {alt['full_pinyin']} ({tone_str})")
-            
-            correction = input("Enter correct character (or number for alternative, or Enter to keep): ").strip()
-            
-            if correction:
-                if correction.isdigit() and 'alternatives' in result:
-                    # User selected an alternative
-                    alt_idx = int(correction) - 1
-                    if 0 <= alt_idx < len(result['alternatives']):
-                        alt = result['alternatives'][alt_idx]
-                        result['character'] = char  # Keep original character
-                        result['pinyin'] = alt['pinyin']
-                        result['predicted_tone'] = alt['tone']
-                        result['method'] = 'user_selected_alternative'
-                        print(f"Selected: {alt['full_pinyin']}")
-                elif len(correction) == 1 and self.is_chinese_character(correction):
-                    # User provided a different character
-                    new_tone, new_pinyin = self.get_tone_from_pypinyin(correction)
-                    result['character'] = correction
-                    result['pinyin'] = new_pinyin
-                    result['predicted_tone'] = new_tone
-                    result['method'] = 'user_corrected'
-                    print(f"Corrected to: {correction}")
-            
-            corrected_results.append(result)
-        
-        return corrected_results
 
 def main():
-    """Test the complete system"""
+    """Test the system with audio file auto-detection"""
     
     if not PYPINYIN_AVAILABLE:
         print("Please install pypinyin first:")
@@ -488,70 +340,19 @@ def main():
         print(f"Failed to initialize classifier: {e}")
         return
     
-    # Interactive mode
-    while True:
-        print("\nOptions:")
-        print("1. Process audio file with expected syllables")
-        print("2. Process audio file (auto-detection)")
-        print("3. Test pypinyin with text input")
-        print("4. Quit")
-        
-        choice = input("\nChoice (1-4): ").strip()
-        
-        if choice == '4':
-            break
-        elif choice == '1':
-            audio_path = input("Audio file path: ").strip()
-            syllables = input("Expected syllables (space-separated): ").strip()
-            
-            if os.path.exists(audio_path):
-                expected_syllables = syllables.split() if syllables else None
-                results = classifier.predict_tones(audio_path, expected_syllables, show_alternatives=True)
-                
-                if results:
-                    print("\n" + classifier.format_results(results))
-                    
-                    # Option for interactive correction
-                    correct = input("\nDo you want to correct any characters? (y/n): ").strip().lower()
-                    if correct == 'y':
-                        corrected_results = classifier.interactive_correction(results)
-                        print("\nCorrected results:")
-                        print(classifier.format_results(corrected_results, show_details=False))
-                else:
-                    print("No results obtained")
-            else:
-                print("Audio file not found")
-        
-        elif choice == '2':
-            audio_path = input("Audio file path: ").strip()
-            
-            if os.path.exists(audio_path):
-                results = classifier.predict_tones(audio_path, None, show_alternatives=True)
-                
-                if results:
-                    print("\n" + classifier.format_results(results))
-                else:
-                    print("No results obtained")
-            else:
-                print("Audio file not found")
-        
-        elif choice == '3':
-            text = input("Enter Chinese text: ").strip()
-            if text:
-                print("\nPypinyin results:")
-                for char in text:
-                    if classifier.is_chinese_character(char):
-                        tone, pinyin = classifier.get_tone_from_pypinyin(char)
-                        alternatives = classifier.get_multiple_pronunciations(char)
-                        
-                        print(f"Character: {char}")
-                        if tone is not None:
-                            tone_str = f"T{tone}" if tone > 0 else "Neutral"
-                            print(f"  Main: {pinyin}{tone} ({tone_str})")
-                        
-                        if len(alternatives) > 1:
-                            print(f"  Alternatives: {', '.join([alt['full_pinyin'] for alt in alternatives])}")
-                        print()
+    # Process audio file
+    audio_path = input("Enter audio file path: ").strip()
+    
+    if not os.path.exists(audio_path):
+        print("Audio file not found")
+        return
+    
+    results = classifier.predict_tones(audio_path, show_alternatives=True)
+    
+    if results:
+        print("\n" + classifier.format_results(results))
+    else:
+        print("No results obtained")
 
 if __name__ == "__main__":
     main()
