@@ -1,22 +1,43 @@
-from transformers import AutoProcessor, AutoModelForCTC, Wav2Vec2CTCTokenizer
+from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2ForCTC, Wav2Vec2CTCTokenizer
 from transformers.models.wav2vec2_phoneme import Wav2Vec2PhonemeCTCTokenizer
 
 import torchaudio
 import torch
 import panphon.distance
 import difflib
+import numpy as np
 
 class PhonemeHandler:
     def __init__(self, model_name: str = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"):
         try:
-            self.processor = AutoProcessor.from_pretrained(model_name)
-            self.model = AutoModelForCTC.from_pretrained(model_name)
+            self.model = Wav2Vec2ForCTC.from_pretrained(model_name)
+            self.feature_encoder = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
             self.tokenizer: Wav2Vec2CTCTokenizer = Wav2Vec2CTCTokenizer.from_pretrained(model_name)
             self.sample_rate = 16000
         except Exception as e:
             raise e
         
-    def transcribe_audio_from_file(self, file_path: str) -> list[str]:
+    def _transcribe_audio(self, waveform: torch.Tensor) -> str:
+        # Feature encoder
+        inputs = self.feature_encoder(
+            waveform, 
+            sampling_rate=self.sample_rate, 
+            return_tensors="pt"
+        )
+
+        with torch.no_grad():
+            logits = self.model(inputs.input_values).logits
+            
+        predicted_ids = torch.argmax(logits, dim=-1)
+
+        transcription = self.tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+        print(f"Raw transcription: '{transcription}'")
+                
+        # Clean up the transcription
+        cleaned_transcription = transcription.strip()
+        return cleaned_transcription
+
+    def transcribe_audio_from_file(self, file_path: str) -> str:
         try:
             audio_input, sample_rate = torchaudio.load(file_path)
 
@@ -29,22 +50,23 @@ class PhonemeHandler:
             # Make the audio mono as well
             waveform = audio_input.mean(dim=0)
 
-            # Tokenize
-            inputs = self.processor(waveform, sampling_rate=sample_rate, return_tensors="pt").input_values
+            return self._transcribe_audio(waveform)
+        except Exception as e:
+            raise e
+    
+    def transcribe_audio_from_numpy(self, audio_array: np.ndarray) -> str:
+        try:
+            # Ensure the audio array is mono
+            if audio_array.ndim > 1 and audio_array.shape[0] > 1:
+                waveform = torch.tensor(audio_array.mean(axis=0))
+            else:
+                waveform = torch.tensor(audio_array)
 
-            # Retrieve logits
-            with torch.no_grad():
-                logits = self.model(inputs).logits
-
-            # Take argmax and decode
-            predicted_ids = torch.argmax(logits, dim=-1)
-            transcription: list[str] = self.processor.batch_decode(predicted_ids)
-
-            return self._process_transcription(transcription[0]) if transcription else list()
+            return self._transcribe_audio(waveform)
         except Exception as e:
             raise e
 
-    def transcribe_audio_from_tensor(self, audio_tensor: torch.Tensor) -> list[str]:
+    def transcribe_audio_from_tensor(self, audio_tensor: torch.Tensor) -> str:
         try:
             # Ensure the audio tensor is mono
             if audio_tensor.dim() > 1 and audio_tensor.size(0) > 1:
@@ -52,18 +74,7 @@ class PhonemeHandler:
             else:
                 waveform = audio_tensor
 
-            # Tokenize
-            inputs = self.processor(waveform, sampling_rate=self.sample_rate, return_tensors="pt").input_values
-
-            # Retrieve logits
-            with torch.no_grad():
-                logits = self.model(inputs).logits
-
-            # Take argmax and decode
-            predicted_ids = torch.argmax(logits, dim=-1)
-            transcription = self.processor.batch_decode(predicted_ids)
-
-            return self._process_transcription(transcription[0]) if transcription else list()
+            return self._transcribe_audio(waveform)
         except Exception as e:
             raise e
     
