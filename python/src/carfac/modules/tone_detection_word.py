@@ -8,9 +8,16 @@ from tqdm import tqdm
 import pandas as pd
 from datetime import datetime
 
+# model dir is in the same dir as this file
+# so we can use __file__ to get current path
+# and then load model and config from there
+MODULES_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(MODULES_DIR, "tone_detection_model", "tone_detection_model_20250928_113915")
+CONFIG_PATH = os.path.join(MODEL_DIR, "config.json")
+MODEL_FILE = os.path.join(MODEL_DIR, "tone_detection.keras")
+
 class ToneClassifierTester:
-    
-    def __init__(self, model_dir, config_path):
+    def __init__(self, model_dir=MODEL_FILE, config_path=CONFIG_PATH):
         """Load the trained model and configuration"""
         self.model = tf.keras.models.load_model(model_dir)
         
@@ -28,11 +35,33 @@ class ToneClassifierTester:
         print(f"Number of classes: {self.num_classes}")
         print(f"Syllable vocabulary size: {len(self.syllable_to_idx)}")
     
-    def extract_mel_spectrogram(self, audio_path):
-        """Extract mel-spectrogram using the same method as training"""
+    def extract_mel_spectrogram(self, audio_input):
+        """Extract mel-spectrogram using the same method as training
+        
+        Args:
+            audio_input: str (file path), np.ndarray, or tensor
+        """
         try:
-            # Use same parameters as training
-            y, sr = librosa.load(audio_path, sr=22050, duration=3.0)
+            # Process different input types
+            if isinstance(audio_input, str):
+                # File path - load using librosa
+                y, sr = librosa.load(audio_input, sr=22050, duration=3.0)
+            else:
+                # Handle numpy array or tensor
+                if hasattr(audio_input, 'cpu'):  # torch tensor
+                    y = audio_input.cpu().numpy()
+                else:  # numpy array
+                    y = np.array(audio_input)
+                
+                if y.ndim > 1:
+                    y = y[0]  # Take first channel
+                
+                sr = 22050  # Assume 22050 Hz and resample if needed
+                y = librosa.resample(y, orig_sr=len(y)//3 if len(y) > 66150 else 22050, target_sr=22050)
+                
+                # Limit to 3 seconds
+                if len(y) > 22050 * 3:
+                    y = y[:22050 * 3]
             
             if len(y) < 0.5 * sr:
                 return None
@@ -186,10 +215,15 @@ class ToneClassifierTester:
         
         return processed_samples
     
-    def predict_tone(self, audio_path, syllable_text="unknown"):
-        """Predict tone for a single audio file"""
+    def predict_tone(self, audio_input, syllable_text="unknown"):
+        """Predict tone for audio input
+        
+        Args:
+            audio_input: str (file path), np.ndarray, or tensor
+            syllable_text: str
+        """
         # Extract features
-        mel_spec = self.extract_mel_spectrogram(audio_path)
+        mel_spec = self.extract_mel_spectrogram(audio_input)
         if mel_spec is None:
             return None
         

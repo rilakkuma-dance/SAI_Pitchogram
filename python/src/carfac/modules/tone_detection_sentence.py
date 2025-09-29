@@ -36,11 +36,34 @@ class Wav2Vec2PypinyinToneClassifier:
         print(f"Wav2vec2 loaded successfully on {self.device}")
         print("Pypinyin tone lookup ready")
     
-    def detect_characters_with_timing(self, audio_path):
-        """Detect Chinese characters with timing using wav2vec2"""
+    def detect_characters_with_timing(self, audio_input):
+        """Detect Chinese characters with timing using wav2vec2
+        
+        Args:
+            audio_input: str (file path), np.ndarray, or torch.Tensor
+        """
         try:
-            # Load audio for wav2vec2
-            audio = librosa.load(audio_path, sr=16000)[0]
+            # Process different input types
+            if isinstance(audio_input, str):
+                # File path - load using librosa
+                audio = librosa.load(audio_input, sr=16000)[0]
+            elif isinstance(audio_input, torch.Tensor):
+                # Convert tensor to numpy and resample to 16kHz
+                audio = audio_input.cpu().numpy()
+                if audio.ndim > 1:
+                    audio = audio[0]  # Take first channel
+                # Assume input needs resampling to 16kHz
+                audio = librosa.resample(audio, orig_sr=len(audio)//10 if len(audio) > 160000 else 16000, target_sr=16000)
+            elif isinstance(audio_input, np.ndarray):
+                # Numpy array - resample to 16kHz
+                audio = audio_input.copy()
+                if audio.ndim > 1:
+                    audio = audio[0]  # Take first channel
+                # Assume input needs resampling to 16kHz
+                audio = librosa.resample(audio, orig_sr=len(audio)//10 if len(audio) > 160000 else 16000, target_sr=16000)
+            else:
+                raise ValueError(f"Unsupported input type: {type(audio_input)}")
+            
             audio = librosa.util.normalize(audio)
             
             # Get wav2vec2 predictions
@@ -228,13 +251,22 @@ class Wav2Vec2PypinyinToneClassifier:
         
         return results
     
-    def predict_tones(self, audio_path, show_alternatives=False):
-        """Main function: detect characters and classify tones"""
+    # chris: I know this is tones but just making the interface consistent!
+    def predict_tone(self, audio_input, show_alternatives=False):
+        """Main function: detect characters and classify tones
         
-        print(f"Processing: {os.path.basename(audio_path)}")
+        Args:
+            audio_input: str (file path), np.ndarray, or torch.Tensor
+            show_alternatives: bool
+        """
+        
+        if isinstance(audio_input, str):
+            print(f"Processing: {os.path.basename(audio_input)}")
+        else:
+            print(f"Processing: {type(audio_input).__name__} array")
         
         # Step 1: Detect characters with timing
-        transcription, char_timings = self.detect_characters_with_timing(audio_path)
+        transcription, char_timings = self.detect_characters_with_timing(audio_input)
         
         if not char_timings:
             print("No Chinese characters detected")
@@ -347,7 +379,7 @@ def main():
         print("Audio file not found")
         return
     
-    results = classifier.predict_tones(audio_path, show_alternatives=True)
+    results = classifier.predict_tone(audio_path, show_alternatives=True)
     
     if results:
         print("\n" + classifier.format_results(results))

@@ -80,35 +80,12 @@ from modules.visualization_handler import VisualizationHandler, SAIParams
 # ---------------- Phoneme Alignment and Feedback System ----------------
 from modules.phoneme_handler import PhonemeHandler, PhonemeAnalyzer
 
-# ---------------- Simple Audio Processor for Fallback ----------------
-class SimpleAudioProcessor:
-    def __init__(self, fs=16000):
-        self.fs = fs
-        self.n_channels = 200
-        self.frequencies = np.logspace(np.log10(50), np.log10(8000), self.n_channels)
+# ---------------- Audio Recorder ----------------
+from modules.recorder import AudioRecorder
 
-    def process_chunk(self, audio_chunk):
-        if len(audio_chunk) == 0:
-            return np.zeros((self.n_channels, 1))
-        
-        # Simple frequency analysis using FFT
-        fft = np.fft.fft(audio_chunk)
-        freqs = np.fft.fftfreq(len(audio_chunk), 1/self.fs)
-        magnitude = np.abs(fft)
-        
-        # Map to cochlear channels
-        output = np.zeros((self.n_channels, 1))
-        for i, freq in enumerate(self.frequencies):
-            # Find closest frequency bins
-            freq_mask = (freqs >= freq * 0.8) & (freqs <= freq * 1.2)
-            if np.any(freq_mask):
-                output[i, 0] = np.mean(magnitude[freq_mask])
-        
-        # Normalize
-        if np.max(output) > 0:
-            output = output / np.max(output)
-        
-        return output
+# ---------------- Tone Analyzer ----------------
+from modules.tone_detection_sentence import Wav2Vec2PypinyinToneClassifier as ToneAnalyzerSentence
+from modules.tone_detection_word import ToneClassifierTester as ToneAnalyzerWord
 
 # ---------------- Chunk-based Wav2Vec2 Phoneme Handler ----------------
 class SimpleWav2Vec2Handler:
@@ -135,6 +112,9 @@ class SimpleWav2Vec2Handler:
         # Add phoneme analysis results storage
         self.analysis_results = None
         self.overall_score = 0.0
+
+        # Callback system (in lieu of the recorder module)
+        self.callbacks = []
 
         try:
             self.microphone = sr.Microphone(sample_rate=self.sample_rate)
@@ -222,6 +202,7 @@ class SimpleWav2Vec2Handler:
                 print("Missing required components")
                 return False
             
+            """
             # Try a comprehensive test
             try:
                 print("Running comprehensive test...")
@@ -248,6 +229,7 @@ class SimpleWav2Vec2Handler:
                 return False
             
             print("Model loaded successfully with all components working")
+            """
             return True
             
         except Exception as e:
@@ -323,6 +305,18 @@ class SimpleWav2Vec2Handler:
         """Get the latest transcription result"""
         return self.result if self.result else "no_audio"
 
+    def register_callback(self, callback, *args):
+        """Register a callback function to be called on audio processing completion"""
+        self.callbacks.append((callback, args))
+
+    def run_callbacks(self, complete_audio):
+        """Run all registered callbacks"""
+        for callback, args in self.callbacks:
+            try:
+                callback(complete_audio, *args)
+            except Exception as e:
+                print(f"Callback error: {e}")
+
     def _record_audio(self):
         """Record audio continuously"""
         try:
@@ -393,12 +387,13 @@ class SimpleWav2Vec2Handler:
                         print(f"Phoneme analysis error: {analysis_error}")
                         self.analysis_results = None
                         self.overall_score = 0.0
-                        
                 else:
                     self.result = "no_audio"
                     self.analysis_results = None
                     self.overall_score = 0.0
                     print("No transcription generated")
+
+                self.run_callbacks(complete_audio)
                     
             except Exception as processing_error:
                 print(f"Processing error: {processing_error}")
@@ -454,14 +449,8 @@ class AudioProcessor:
                 print("Using CARFAC audio processing")
             except Exception as e:
                 print(f"CARFAC initialization failed: {e}")
-                self.use_carfac = False
         else:
-            self.use_carfac = False
-        
-        if not self.use_carfac:
-            self.fallback = SimpleAudioProcessor(fs=fs)
-            self.n_channels = self.fallback.n_channels
-            print("Using simple audio processing")
+            raise Exception("CARFAC initialization failed")
 
     def process_chunk(self, audio_chunk):
         if self.use_carfac:
@@ -477,9 +466,6 @@ class AudioProcessor:
                 return np.array(naps[:, :, 0]).T
             except Exception as e:
                 print(f"CARFAC processing error: {e}")
-                return self.fallback.process_chunk(audio_chunk)
-        else:
-            return self.fallback.process_chunk(audio_chunk)
 
 # ---------------- SAI Processor with Fallback ----------------
 class SAIProcessor:
@@ -524,7 +510,6 @@ class SAIProcessor:
         
         return sai_output
 
-
 # ---------------- Waveform Buffer Class ----------------
 class WaveformBuffer:
     """Circular buffer for storing waveform data for display"""
@@ -564,7 +549,8 @@ class WaveformBuffer:
 # ---------------- Main SAI Visualization with Wav2Vec2 and Per-Phoneme Feedback ----------------
 class SAIVisualizationWithWav2Vec2:
     def __init__(self, audio_file_path=None, chunk_size=1024, sample_rate=16000, sai_width=200,
-                 debug=True, playback_speed=1.0, loop_audio=True, wav2vec2_model="facebook/wav2vec2-xlsr-53-espeak-cv-ft"):
+                 debug=True, playback_speed=1.0, loop_audio=True, wav2vec2_model="facebook/wav2vec2-xlsr-53-espeak-cv-ft",
+                 tone_analysis_mode="word"):
 
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
@@ -585,7 +571,18 @@ class SAIVisualizationWithWav2Vec2:
         self.wav2vec2_handler = SimpleWav2Vec2HandlerWithLogging(model_name=wav2vec2_model)
         self.phoneme_analyzer = PhonemeAnalyzer(self.target_phonemes)
 
+        self.tone_analyzer = None
+        self.tone_analysis_mode = tone_analysis_mode # "word", "sentence", "both"
+        self.tone_analysis_results = None
+
+        match self.tone_analysis_mode:
+            case "word":
+                self.tone_analyzer = ToneAnalyzerWord()
+            case "sentence":
+                self.tone_analyzer = ToneAnalyzerSentence()
+
         # Most recent results of phoneme analysis
+        self.wav2vec2_handler.register_callback(self.tone_analysis_callback)
         
         # Feedback display components
         self.phoneme_feedback_displays = []
@@ -902,6 +899,16 @@ class SAIVisualizationWithWav2Vec2:
         
         percentage = f"{overall_score * 100:.1f}%"
         return overall_score, percentage
+
+    def tone_analysis_callback(self, audio):
+        """Callback to run tone analysis on audio"""
+        if self.tone_analyzer is not None:
+            try:
+                self.tone_analysis_results = self.tone_analyzer.predict_tone(audio)
+                print(f"Tone analysis results: {self.tone_analysis_results}")
+            except Exception as e:
+                print(f"Tone analysis error: {e}")
+                self.tone_analysis_results = None
 
     def _load_audio_file(self):
         print(f"Loading audio file: {self.audio_file_path}")
@@ -1721,6 +1728,8 @@ def main_with_voice_selection():
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--default-voice', choices=['male', 'female'], default='female',
                         help='Default voice to start with')
+    parser.add_argument('--tone-mode', choices=['word', 'sentence'], default='sentence',
+                        help='Which tone analyzer to use')
     
     args = parser.parse_args()
     
@@ -1758,7 +1767,8 @@ def main_with_voice_selection():
             debug=args.debug,
             playback_speed=args.speed,
             loop_audio=not args.no_loop,
-            wav2vec2_model=args.wav2vec2_model
+            wav2vec2_model=args.wav2vec2_model,
+            tone_analysis_mode=args.tone_mode,
         )
         
         # Set default voice (prefer the one that exists)

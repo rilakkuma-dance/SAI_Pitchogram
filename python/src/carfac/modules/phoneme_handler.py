@@ -237,5 +237,5 @@ class PhonemeAnalyzer:
         # Calculate overall score
         overall_score = self.phoneme_similarity(detected, reference)
         print("Overall_score:", overall_score)
-        
-        return results, overall_score
+
+        return results, max(0, overall_score)
