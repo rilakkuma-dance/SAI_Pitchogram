@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mandarin Practice Mode</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 10px;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container { max-width: 1200px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+        
+        .practice-header {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 135, 0.5);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .set-title { font-size: 1.5rem; color: #00ff87; margin-bottom: 5px; }
+        .current-item { font-size: 1rem; color: #60efff; }
+        
+        .score-section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 12px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .overall-score {
+            font-size: 2.5rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #00ff87 0%, #60efff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 5px;
+        }
+        
+        .feedback-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            flex-grow: 1;
+        }
+        .feedback-column {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        .column-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .target-title { color: #60efff; }
+        .yours-title { color: #ffb347; }
+        
+        .syllables-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .syllable-box {
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 10px;
+            min-width: 100px;
+        }
+        .syll-char { font-size: 2rem; text-align: center; color: #60efff; }
+        .syll-pinyin { text-align: center; font-size: 0.9rem; color: #60efff; margin: 5px 0; }
+        .phonemes { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+        .phoneme {
+            padding: 4px 6px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        .perfect { background: #00ff87; color: #000; }
+        .good { background: #4ade80; color: #000; }
+        .close { background: #fbbf24; color: #000; }
+        .poor { background: #fb923c; color: #000; }
+        .wrong { background: #ef4444; color: #fff; }
+        .missing { background: #6b7280; color: #fff; opacity: 0.5; }
+        
+        .status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 15px;
+            background: rgba(0,0,0,0.8);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            border: 2px solid #666;
+        }
+        .status.active { border-color: #00ff87; }
+        .tone-visual {
+            height: 25px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Waiting for data...</div>
+    <div class="container">
+        <div class="practice-header">
+            <div class="set-title" id="setTitle">Practice Set #1</div>
+            <div class="current-item" id="currentItem">Item 1 of 5</div>
+        </div>
+
+        <div class="score-section">
+            <div class="overall-score" id="overallScore">--</div>
+            <div style="font-size: 0.9rem; opacity: 0.8;">PRONUNCIATION SCORE</div>
+        </div>
+        
+        <div class="feedback-grid">
+            <div class="feedback-column">
+                <div class="column-title target-title">🎯 TARGET</div>
+                <div class="syllables-row" id="targetSyllables"></div>
+            </div>
+            <div class="feedback-column">
+                <div class="column-title yours-title">🗣️ YOUR PRONUNCIATION</div>
+                <div class="syllables-row" id="yourSyllables"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const toneShapes = {
+            1: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 15 L 90 15" stroke="#00ff87" stroke-width="2" fill="none"/></svg>',
+            2: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 40 Q 50 25 90 10" stroke="#00ff87" stroke-width="2" fill="none"/></svg>',
+            3: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 25 Q 25 40 50 45 Q 75 40 90 15" stroke="#00ff87" stroke-width="2" fill="none"/></svg>',
+            4: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 10 L 90 45" stroke="#00ff87" stroke-width="2" fill="none"/></svg>',
+            5: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 25 L 90 25" stroke="#00ff87" stroke-width="2" stroke-dasharray="5,5" fill="none"/></svg>'
+        };
+        
+        function createSyllableBox(data, isTarget) {
+            const box = document.createElement('div');
+            box.className = 'syllable-box';
+            
+            let content = `<div class="syll-char">${data.character}</div>`;
+            
+            if (data.tone) {
+                content += `<div class="tone-visual">${toneShapes[data.tone] || ''}</div>`;
+            } else {
+                content += `<div class="tone-visual" style="opacity: 0.3;">❓</div>`;
+            }
+            
+            content += `<div class="syll-pinyin">${data.pinyin}${data.tone || ''}</div>`;
+            content += '<div class="phonemes">';
+            
+            data.phonemes.forEach((phoneme, idx) => {
+                const scoreClass = data.phoneme_scores[idx] || 'perfect';
+                content += `<span class="phoneme ${scoreClass}">${phoneme}</span>`;
+            });
+            
+            content += '</div>';
+            box.innerHTML = content;
+            return box;
+        }
+        
+        function updateDisplay(data) {
+            console.log('updateDisplay called with:', data);
+            
+            if (!data) return;
+            
+            if (data.practice_set) {
+                document.getElementById('setTitle').textContent = 
+                    `Practice Set #${data.practice_set.set_number}`;
+                document.getElementById('currentItem').textContent = 
+                    data.practice_set.current_item || 'Item 1 of 5';
+            }
+            
+            document.getElementById('overallScore').textContent = 
+                data.overall_score ? `${Math.round(data.overall_score * 100)}%` : '--';
+            
+            const targetContainer = document.getElementById('targetSyllables');
+            targetContainer.innerHTML = '';
+            if (data.target && data.target.length > 0) {
+                data.target.forEach(syll => {
+                    targetContainer.appendChild(createSyllableBox(syll, true));
+                });
+            }
+            
+            const yoursContainer = document.getElementById('yourSyllables');
+            yoursContainer.innerHTML = '';
+            if (data.yours && data.yours.length > 0) {
+                data.yours.forEach(syll => {
+                    yoursContainer.appendChild(createSyllableBox(syll, false));
+                });
+            }
+        }
+        
+        let lastUpdate = 0;
+        setInterval(() => {
+            fetch('feedback_data.json?' + Date.now())
+                .then(r => r.json())
+                .then(data => {
+                    if (data) {
+                        updateDisplay(data);
+                        lastUpdate = data.updated_at;
+                        const status = document.getElementById('status');
+                        status.textContent = 'Connected ✓';
+                        status.className = 'status active';
+                    }
+                })
+                .catch(e => {
+                    console.error('Fetch error:', e);
+                    const status = document.getElementById('status');
+                    status.textContent = 'Waiting...';
+                    status.className = 'status';
+                });
+        }, 500);
+    </script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+{
+  "overall_score": 0.6719457013574661,
+  "target": [
+    {
+      "character": "妈",
+      "pinyin": "ma",
+      "tone": 1,
+      "phonemes": [
+        "n",
+        "y",
+        "ɹ",
+        "ə",
+        "n",
+        " ",
+        "t",
+        "ɕ",
+        "ʰ",
+        "y",
+        " ",
+        "m",
+        "a",
+        "i",
+        " ",
+        "ʂ",
+        "u"
+      ],
+      "phoneme_scores": [
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect",
+        "perfect"
+      ]
+    }
+  ],
+  "yours": [
+    {
+      "character": "妈",
+      "pinyin": "ma",
+      "tone": 1,
+      "confidence": 1.0,
+      "phonemes": [
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        ".",
+        "m",
+        "a",
+        "i",
+        ".",
+        ".",
+        "."
+      ],
+      "phoneme_scores": [
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "missing",
+        "perfect",
+        "perfect",
+        "perfect",
+        "missing",
+        "missing",
+        "missing"
+      ]
+    }
+  ],
+  "practice_set": {
+    "set_number": 1,
+    "current_item": "Item 5 of 5",
+    "words": [
+      {
+        "character": "去年",
+        "pinyin": "qùnián",
+        "english": "last year",
+        "phonemes": "tɕʰynjɛn",
+        "tone": [
+          4,
+          2
+        ]
+      },
+      {
+        "character": "书",
+        "pinyin": "shū",
+        "english": "book",
+        "phonemes": "ʂu",
+        "tone": 1
+      },
+      {
+        "character": "医院",
+        "pinyin": "yīyuàn",
+        "english": "hospital",
+        "phonemes": "ijyan",
+        "tone": [
+          1,
+          4
+        ]
+      }
+    ],
+    "sentences": [
+      {
+        "id": 22,
+        "mandarin": "她是一个聪明的女人。",
+        "pinyin": "Tā shì yí ge cōngmíng de nǚrén.",
+        "english": "She is a smart woman",
+        "phonemes": "tʰa ʂɨ i kɤ tsʰʊŋmiŋ tɤ nyɹən"
+      },
+      {
+        "id": 5,
+        "mandarin": "女人去买书",
+        "pinyin": "Nǚrén qù mǎi shū",
+        "english": "The woman goes to buy books",
+        "phonemes": "nyɹən tɕʰy mai ʂu"
+      }
+    ]
+  },
+  "updated_at": 1759301438.6729352
+}
