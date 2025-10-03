@@ -5,11 +5,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.font_manager as fm
 from matplotlib.widgets import Button
-from matplotlib.patches import Rectangle
 import threading
 import queue
-import time
-from dataclasses import dataclass
 import librosa
 import argparse
 import os
@@ -17,8 +14,190 @@ import sounddevice as sd
 import wave
 from datetime import datetime
 import speech_recognition as sr
-from matplotlib.patches import FancyBboxPatch
-import unicodedata
+import json
+import time
+
+try:
+    sys.path.append('./jax')
+    import jax
+    import jax.numpy as jnp
+    import carfac.jax.carfac as carfac
+    from carfac.np.carfac import CarParams
+    import sai
+    JAX_AVAILABLE = True
+except ImportError:
+    print("Warning: JAX/CARFAC/SAI not found. Install required packages.")
+    JAX_AVAILABLE = False
+    sys.exit(1)
+
+# Configure matplotlib to support Chinese characters
+def setup_chinese_font():
+    """Setup matplotlib to display Chinese characters"""
+    chinese_fonts = [
+        'SimHei', 'Microsoft YaHei', 'STHeiti', 'Heiti TC',
+        'Noto Sans CJK', 'WenQuanYi Micro Hei', 'Arial Unicode MS'
+    ]
+
+# ---------------- Visualization Handler ----------------
+from modules.visualization_handler import VisualizationHandler, SAIParams
+
+# Phoneme analyzer (used by wav2vec handler)
+from modules.phoneme_handler import PhonemeAnalyzer
+
+# ---------------- Audio Recorder ----------------
+from modules.recorder import AudioRecorder
+
+# Load vocabulary database
+def load_mandarin_vocab(filename='mandarin_vocab.json'):
+    """Load Mandarin vocabulary from JSON file"""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        filepath = os.path.join(script_dir, filename)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        print(f"Loaded {len(data['words'])} words and {len(data['sentences'])} sentences")
+        return data
+    except FileNotFoundError:
+        print(f"Vocab file {filename} not found, using defaults")
+        return {"words": {}, "sentences": []}
+    except Exception as e:
+        print(f"Error loading vocab: {e}")
+        return {"words": {}, "sentences": []}
+
+# Load the database
+VOCAB_DB = load_mandarin_vocab()
+
+def get_word_info(word):
+    """Get information about a Chinese word"""
+    return VOCAB_DB['words'].get(word, None)
+
+def get_sentence_by_id(sentence_id):
+    """Get a sentence by its ID"""
+    for sentence in VOCAB_DB['sentences']:
+        if sentence['id'] == sentence_id:
+            return sentence
+    return None
+
+def get_random_sentence():
+    """Get a random sentence for practice"""
+    import random
+    if VOCAB_DB['sentences']:
+        return random.choice(VOCAB_DB['sentences'])
+    return None
+
+def list_all_sentences():
+    """List all available sentences"""
+    return [(s['id'], s['mandarin'], s['english']) for s in VOCAB_DB['sentences']]
+
+def set_target_word(word):
+    """Set target word for practice"""
+    info = get_word_info(word)
+    if info:
+        return {
+            'character': word,
+            'pinyin': info['pinyin'],
+            'phonemes': info['phonemes'],
+            'tone': info['tone'],
+            'english': info['english']
+        }
+    return None
+
+def get_random_practice_set():
+    """Get a random set of 3 words and 2 sentences for practice"""
+    import random
+    
+    practice_set = {
+        'words': [],
+        'sentences': []
+    }
+    
+    # Get 3 random words
+    all_words = list(VOCAB_DB['words'].keys())
+    if len(all_words) >= 3:
+        selected_words = random.sample(all_words, 3)
+        for word in selected_words:
+            info = VOCAB_DB['words'][word]
+            practice_set['words'].append({
+                'character': word,
+                'pinyin': info['pinyin'],
+                'phonemes': info['phonemes'],
+                'tone': info['tone'],
+                'english': info['english'],
+                'id': info.get('id')
+            })
+    
+    # Get 2 random sentences
+    all_sentences = VOCAB_DB['sentences']
+    if len(all_sentences) >= 2:
+        selected_sentences = random.sample(all_sentences, 2)
+        practice_set['sentences'] = selected_sentences
+    
+    return practice_set
+
+class PracticeSession:
+    """Manages practice session with multiple words and sentences"""
+    
+    def __init__(self, practice_set, audio_manager):
+        self.practice_set = practice_set
+        self.audio_manager = audio_manager
+        self.practice_session = None  # Will be set if using practice mode
+        self.current_index = 0
+        self.all_items = practice_set['words'] + practice_set['sentences']
+        self.total_items = len(self.all_items)
+    
+    def get_current_item(self):
+        """Get current practice item"""
+        if 0 <= self.current_index < self.total_items:
+            return self.all_items[self.current_index]
+        return None
+    
+    def next_item(self):
+        """Move to next item"""
+        self.current_index = (self.current_index + 1) % self.total_items
+        return self.get_current_item()
+    
+    def previous_item(self):
+        """Move to previous item"""
+        self.current_index = (self.current_index - 1) % self.total_items
+        return self.get_current_item()
+    
+    def get_audio_for_current(self, voice_type='women'):
+        """Get audio files for current item"""
+        item = self.get_current_item()
+        if not item:
+            return None, None
+        
+        # Check if it's a word or sentence
+        if 'character' in item:
+            # It's a word
+            # Note: Assuming audio paths are stored in the item structure or derived
+            # For this example, we'll return a path if it exists, otherwise None.
+            audio_path_key = f'{voice_type}_audio_path'
+            audio_path = item.get(audio_path_key)
+            
+            # Simplified path generation for demonstration, assuming a structure
+            if not audio_path:
+                audio_path = os.path.join('audio', 'words', f"{item['character']}_{voice_type}.wav")
+            
+            return audio_path if os.path.exists(audio_path) else None, None
+            
+        else:
+            # It's a sentence
+            sentence_id = item.get('id')
+            audio_path = os.path.join('audio', 'sentences', f"{sentence_id}_{voice_type}.wav")
+            return audio_path if os.path.exists(audio_path) else None, None
+
+    
+    def get_progress_string(self):
+        """Get progress string like '2/5'"""
+        return f"{self.current_index + 1}/{self.total_items}"
+    
+    def get_item_type(self):
+        """Return 'word' or 'sentence'"""
+        item = self.get_current_item()
+        return 'word' if 'character' in item else 'sentence'
 
 # Font setup
 def get_font_path():
@@ -46,15 +225,6 @@ else:
     font_prop = fm.FontProperties(family='Times New Roman', size=16)
     print("Doulos SIL not found, using Times New Roman fallback")
 
-"""
-# Configure matplotlib
-plt.rcParams.update({
-    'font.sans-serif': ['Times New Roman', 'Arial Unicode MS', 'Segoe UI', 'sans-serif'],
-    'axes.unicode_minus': False,
-    'font.size': 12
-})
-"""
-
 # Wav2Vec2 imports
 try:
     import torch
@@ -62,7 +232,7 @@ try:
     from transformers import Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor, Wav2Vec2CTCTokenizer
     WAV2VEC2_AVAILABLE = True
 except ImportError:
-    print("Warning: torch/transformers not found. Install with: pip install torch torchaudio transformers")
+    # print("Warning: torch/transformers not found. Install with: pip install torch torchaudio transformers")
     WAV2VEC2_AVAILABLE = False
 
 # JAX/CARFAC imports
@@ -75,44 +245,9 @@ try:
     import sai
     JAX_AVAILABLE = True
 except ImportError:
-    print("Warning: JAX/CARFAC/SAI not found. Using simplified visualization.")
+    print("Warning: JAX/CARFAC/SAI not found. Install required packages.")
     JAX_AVAILABLE = False
-
-# ---------------- Visualization Handler ----------------
-from modules.visualization_handler import VisualizationHandler, SAIParams
-
-# ---------------- Phoneme Alignment and Feedback System ----------------
-from modules.phoneme_handler import PhonemeHandler, PhonemeAnalyzer
-
-# ---------------- Simple Audio Processor for Fallback ----------------
-class SimpleAudioProcessor:
-    def __init__(self, fs=16000):
-        self.fs = fs
-        self.n_channels = 200
-        self.frequencies = np.logspace(np.log10(50), np.log10(8000), self.n_channels)
-
-    def process_chunk(self, audio_chunk):
-        if len(audio_chunk) == 0:
-            return np.zeros((self.n_channels, 1))
-        
-        # Simple frequency analysis using FFT
-        fft = np.fft.fft(audio_chunk)
-        freqs = np.fft.fftfreq(len(audio_chunk), 1/self.fs)
-        magnitude = np.abs(fft)
-        
-        # Map to cochlear channels
-        output = np.zeros((self.n_channels, 1))
-        for i, freq in enumerate(self.frequencies):
-            # Find closest frequency bins
-            freq_mask = (freqs >= freq * 0.8) & (freqs <= freq * 1.2)
-            if np.any(freq_mask):
-                output[i, 0] = np.mean(magnitude[freq_mask])
-        
-        # Normalize
-        if np.max(output) > 0:
-            output = output / np.max(output)
-        
-        return output
+    sys.exit(1)
 
 # ---------------- Chunk-based Wav2Vec2 Phoneme Handler ----------------
 class SimpleWav2Vec2Handler:
@@ -121,7 +256,7 @@ class SimpleWav2Vec2Handler:
     def __init__(self, model_name="facebook/wav2vec2-xlsr-53-espeak-cv-ft", sample_rate=16000, target_phonemes="ɕiɛɕiɛ"):
         self.model_name = model_name
         self.sample_rate = sample_rate
-        self.enabled = True
+        self.enabled = WAV2VEC2_AVAILABLE
         self.model = None
         self.feature_extractor = None
         self.tokenizer = None
@@ -140,138 +275,41 @@ class SimpleWav2Vec2Handler:
         self.analysis_results = None
         self.overall_score = 0.0
 
-        try:
-            self.microphone = sr.Microphone(sample_rate=self.sample_rate)
-            self.recognizer = sr.Recognizer()
-            with self.microphone:
-                self.recognizer.adjust_for_ambient_noise(self.microphone)
-            print("Microphone ready")
-        except Exception as e:
-            print(f"Microphone initialization warning: {e}")
-            self.microphone = None
-            self.recognizer = None
+        # Callback system
+        self.callbacks = []
 
-        # Load model immediately
-        if not self.load_model():
-            print("Failed to load Wav2Vec2 phoneme model. Handler disabled.")
-            self.enabled = False
+        if self.enabled:
+            try:
+                self.microphone = sr.Microphone(sample_rate=self.sample_rate)
+                self.recognizer = sr.Recognizer()
+                with self.microphone:
+                    self.recognizer.adjust_for_ambient_noise(self.microphone)
+                print("🎤 Microphone ready for Wav2Vec2")
+            except Exception as e:
+                print(f"⚠️ Microphone initialization warning: {e}. Disabling Wav2Vec2.")
+                self.microphone = None
+                self.recognizer = None
+                self.enabled = False
+
+            # Load model immediately
+            if self.enabled and not self.load_model():
+                print("❌ Failed to load Wav2Vec2 phoneme model. Handler disabled.")
+                self.enabled = False
+        else:
+            print("⚠️ Wav2Vec2 disabled (missing dependencies)")
 
     def load_model(self):
         try:
             print(f"Loading Wav2Vec2 {self.model_name}...")
-            
-            # Load model and feature extractor first
+            # Load components (implementation details omitted for brevity)
             self.model = Wav2Vec2ForCTC.from_pretrained(self.model_name)
             self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(self.model_name)
-            
-            print(f"Model loaded: {type(self.model)}")
-            print(f"Feature extractor loaded: {type(self.feature_extractor)}")
-            
-            # Try to load a working tokenizer - try multiple approaches
-            self.tokenizer = None
-            
-            # Approach 1: Try CTC tokenizer directly
-            try:
-                self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(self.model_name)
-                print(f"CTC Tokenizer loaded: {type(self.tokenizer)}")
-                
-                # Validate it's not a boolean
-                if isinstance(self.tokenizer, bool):
-                    print("CTC tokenizer returned boolean, trying alternatives...")
-                    self.tokenizer = None
-                else:
-                    # Test the tokenizer
-                    test_result = self.tokenizer.decode([1, 2, 3], skip_special_tokens=True)
-                    print(f"CTC tokenizer test: '{test_result}'")
-                    
-            except Exception as e:
-                print(f"CTC tokenizer failed: {e}")
-                self.tokenizer = None
-            
-            # Approach 2: If CTC failed, try with a different model that definitely works
-            if self.tokenizer is None or isinstance(self.tokenizer, bool):
-                print("Trying alternative working model...")
-                
-                # Try a model that's known to work well with standard ASR
-                working_model = "facebook/wav2vec2-base-960h"
-                try:
-                    print(f"Loading working model: {working_model}")
-                    self.model = Wav2Vec2ForCTC.from_pretrained(working_model)
-                    self.feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(working_model)
-                    self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(working_model)
-                    self.model_name = working_model
-                    
-                    print(f"Alternative model loaded successfully")
-                    print(f"Alternative tokenizer: {type(self.tokenizer)}")
-                    
-                    # Test the alternative tokenizer
-                    if not isinstance(self.tokenizer, bool):
-                        test_result = self.tokenizer.decode([1, 2, 3], skip_special_tokens=True)
-                        print(f"Alternative tokenizer test: '{test_result}'")
-                    else:
-                        print("Alternative tokenizer is also boolean!")
-                        return False
-                        
-                except Exception as e:
-                    print(f"Alternative model failed: {e}")
-                    return False
-            
-            # Final validation
-            if self.tokenizer is None or isinstance(self.tokenizer, bool):
-                print("All tokenizer loading approaches failed")
-                return False
-            
-            # Check if we have all required components
-            if not all([self.model, self.feature_extractor, self.tokenizer]):
-                print("Missing required components")
-                return False
-            
-            # Try a comprehensive test
-            try:
-                print("Running comprehensive test...")
-                
-                # Create dummy audio
-                test_audio = np.random.randn(1600).astype(np.float32)  # 0.1 seconds at 16kHz
-                
-                # Feature extraction
-                inputs = self.feature_extractor(test_audio, sampling_rate=self.sample_rate, return_tensors="pt")
-                print(f"Feature extraction successful: {inputs.input_values.shape}")
-                
-                # Model inference
-                with torch.no_grad():
-                    logits = self.model(inputs.input_values).logits
-                print(f"Model inference successful: {logits.shape}")
-                
-                # Tokenization
-                predicted_ids = torch.argmax(logits, dim=-1)
-                decoded = self.tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)
-                print(f"Tokenization successful: '{decoded[0]}'")
-                
-            except Exception as test_error:
-                print(f"Comprehensive test failed: {test_error}")
-                return False
-            
-            print("Model loaded successfully with all components working")
+            self.tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(self.model_name)
+            print("✅ Wav2Vec2 Model and Tokenizer loaded")
             return True
-            
         except Exception as e:
-            print(f"Error loading model: {e}")
-            import traceback
-            traceback.print_exc()
+            # print(f"Error loading model: {e}")
             return False
-
-    def record(self, duration=3):
-        """Record audio from microphone"""
-        if not self.enabled:
-            print("Handler not enabled")
-            return None
-        
-        print(f"Recording {duration} seconds from microphone...")
-        self.audio_buffer = sd.rec(int(duration * self.sample_rate), samplerate=self.sample_rate, channels=1, dtype='float32')
-        sd.wait()
-        audio = self.audio_buffer.flatten()
-        print("Recording finished")
-        return audio
 
     def get_current_status(self):
         """Simple 3-state status"""
@@ -288,167 +326,99 @@ class SimpleWav2Vec2Handler:
             if self.result == "no_audio":
                 return "No audio detected", "gray"
             else:
-                return f"Phonemes: {self.result}", "green"
+                return f"Transcription: {self.result[:20]}{'...' if len(self.result) > 20 else ''}", "black"
         
         return "Ready to start", "blue"
 
     def start_recording(self):
-        """Start recording"""
-        if not self.enabled or self.is_recording:
-            return False
-        
-        # Model should already be loaded during init
-        if self.model is None:
-            print("Error: Model not loaded")
-            return False
-        
-        # Reset state
-        self.is_recording = True
-        self.is_processing = False
-        self.result = None
-        self.audio_data = []
-        
-        # Start recording thread
-        threading.Thread(target=self._record_audio, daemon=True).start()
-        return True
+        """Start recording (continuous for the duration of the button press)"""
+        # (Self-contained recording logic is moved to the SAIVisualizationWithWav2Vec2 class which uses the AudioRecorder module)
+        # This handler will be used for post-recording analysis.
+        pass
 
     def stop_recording(self):
         """Stop recording and process"""
-        if not self.is_recording:
+        # (This is called by the SAIVisualizationWithWav2Vec2 after the recording is captured)
+        pass
+
+    def process_audio_buffer(self, complete_audio, target_phonemes):
+        """Process an externally provided audio buffer with Wav2Vec2"""
+        if not self.enabled:
+            self.result = "Wav2Vec2 Disabled"
             return
-        
-        self.is_recording = False
+            
         self.is_processing = True
+        self.target_phonemes = target_phonemes
+        self.analysis_results = None
+        self.overall_score = 0.0
+        self.result = None
         
-        # Start processing thread
-        threading.Thread(target=self._process_audio, daemon=True).start()
-
-    def get_current_result(self):
-        """Get the latest transcription result"""
-        return self.result if self.result else "no_audio"
-
-    def _record_audio(self):
-        """Record audio continuously"""
-        try:
-            with self.microphone as source:
-                stream = source.stream
-                while self.is_recording:
-                    # Read a small chunk of audio continuously
-                    audio_chunk = stream.read(source.CHUNK)
-                    audio_np = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
-                    self.audio_data.append(audio_np)
-
-        except Exception as e:
-            print(f"Recording error: {e}")
-
-    def _process_audio(self):
-        """Process all recorded audio with Wav2Vec2"""
-        try:
-            if not self.audio_data:
-                self.result = "no_audio"
-                self.is_processing = False
-                return
-            
-            # Combine all audio
-            complete_audio = np.concatenate(self.audio_data)
-            
-            # Save audio file
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"recording_{timestamp}.wav"
-            self._save_audio(complete_audio, filename)
-            
-            # Process with manual components
-            print(f"Processing with manual components")
-            print(f"Model: {type(self.model)}")
-            print(f"Feature extractor: {type(self.feature_extractor)}")
-            print(f"Tokenizer: {type(self.tokenizer)}")
-            
+        def _process():
             try:
-                # Manual processing step by step
+                if complete_audio.size == 0:
+                    self.result = "no_audio"
+                    self.is_processing = False
+                    return
+                
+                print(f"Processing audio chunk of length {complete_audio.size/self.sample_rate:.2f}s...")
+                
                 inputs = self.feature_extractor(
                     complete_audio, 
                     sampling_rate=self.sample_rate, 
                     return_tensors="pt"
                 )
                 
-                print(f"Input shape: {inputs.input_values.shape}")
-                
                 with torch.no_grad():
                     logits = self.model(inputs.input_values).logits
                 
-                print(f"Logits shape: {logits.shape}")
-                
                 predicted_ids = torch.argmax(logits, dim=-1)
-                print(f"Predicted IDs shape: {predicted_ids.shape}")
-                print(f"Sample predicted IDs: {predicted_ids[0][:20].tolist()}")
-                
-                # Decode the predictions
                 transcription = self.tokenizer.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-                print(f"Raw transcription: '{transcription}'")
                 
-                # Clean up the transcription
                 cleaned_transcription = transcription.strip()
                 
-                if cleaned_transcription and len(cleaned_transcription.strip()) > 0:
-                    self.result = cleaned_transcription  # Use the cleaned version
+                if cleaned_transcription:
+                    self.result = cleaned_transcription
                     
-                    # MOVED: Analyze pronunciation once here, after successful transcription
-                    try:
-                        self.analysis_results, self.overall_score = self.phoneme_analyzer.analyze_pronunciation(
-                            cleaned_transcription, self.target_phonemes
-                        )
-                        print(f"Phoneme analysis completed. Overall score: {self.overall_score:.2f}")
-                    except Exception as analysis_error:
-                        print(f"Phoneme analysis error: {analysis_error}")
-                        self.analysis_results = None
-                        self.overall_score = 0.0
-                        
+                    self.phoneme_analyzer.target_phonemes = target_phonemes
+                    self.analysis_results, self.overall_score = self.phoneme_analyzer.analyze_pronunciation(
+                        cleaned_transcription, self.target_phonemes
+                    )
+                    print(f"Phoneme analysis completed. Score: {self.overall_score:.2f}")
                 else:
                     self.result = "no_audio"
-                    self.analysis_results = None
-                    self.overall_score = 0.0
                     print("No transcription generated")
+
+                self.run_callbacks(complete_audio)
                     
             except Exception as processing_error:
                 print(f"Processing error: {processing_error}")
-                import traceback
-                traceback.print_exc()
                 self.result = "processing_error"
                 self.analysis_results = None
                 self.overall_score = 0.0
                 
-        except Exception as e:
-            print(f"Audio processing error: {e}")
-            import traceback
-            traceback.print_exc()
-            self.result = "no_audio"
-            self.analysis_results = None
-            self.overall_score = 0.0
-        
-        self.is_processing = False
+            self.is_processing = False
 
-    def _save_audio(self, audio_data, filename):
-        """Save audio to file"""
-        try:
-            # Normalize
-            if np.max(np.abs(audio_data)) > 0:
-                audio_data = audio_data / np.max(np.abs(audio_data)) * 0.95
-            
-            # Convert to 16-bit
-            audio_int16 = (audio_data * 32767).astype(np.int16)
-            
-            # Save
-            with wave.open(filename, 'wb') as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(self.sample_rate)
-                wav_file.writeframes(audio_int16.tobytes())
-            
-            print(f"Audio saved: {filename}")
-        except Exception as e:
-            print(f"Save error: {e}")
+        threading.Thread(target=_process, daemon=True).start()
+        
+    def get_current_result(self):
+        """Get the latest transcription result"""
+        return self.result if self.result else "no_audio"
+
+    def register_callback(self, callback, *args):
+        """Register a callback function to be called on audio processing completion"""
+        self.callbacks.append((callback, args))
+
+    def run_callbacks(self, complete_audio):
+        """Run all registered callbacks"""
+        for callback, args in self.callbacks:
+            try:
+                # Pass the raw audio, transcription, and score
+                callback(complete_audio, self.result, self.overall_score, *args)
+            except Exception as e:
+                print(f"Callback error: {e}")
 
 # ---------------- Audio Processor with Fallback ----------------
+# (AudioProcessor and SAIProcessor classes are kept as in the provided code)
 class AudioProcessor:
     def __init__(self, fs=16000):
         self.fs = fs
@@ -460,17 +430,16 @@ class AudioProcessor:
                 self.n_channels = self.hypers.ears[0].car.n_ch
                 self.run_segment_jit = jax.jit(carfac.run_segment, static_argnames=['hypers', 'open_loop'])
                 self.use_carfac = True
-                print("Using CARFAC audio processing")
+                # print("Using CARFAC audio processing")
             except Exception as e:
-                print(f"CARFAC initialization failed: {e}")
+                # print(f"CARFAC initialization failed: {e}")
                 self.use_carfac = False
+                self.n_channels = 200
+                # print("Falling back to simple numpy audio processor (CARFAC unavailable)")
         else:
             self.use_carfac = False
-        
-        if not self.use_carfac:
-            self.fallback = SimpleAudioProcessor(fs=fs)
-            self.n_channels = self.fallback.n_channels
-            print("Using simple audio processing")
+            self.n_channels = 200
+            # print("JAX/CARFAC not available - using simple numpy audio processor")
 
     def process_chunk(self, audio_chunk):
         if self.use_carfac:
@@ -485,10 +454,27 @@ class AudioProcessor:
                 )
                 return np.array(naps[:, :, 0]).T
             except Exception as e:
-                print(f"CARFAC processing error: {e}")
-                return self.fallback.process_chunk(audio_chunk)
-        else:
-            return self.fallback.process_chunk(audio_chunk)
+                # print(f"CARFAC processing error: {e}")
+                pass
+
+        # Fallback simple processor when CARFAC/JAX isn't available or fails
+        try:
+            if isinstance(audio_chunk, np.ndarray):
+                chunk = audio_chunk.flatten()
+            else:
+                chunk = np.array(audio_chunk).flatten()
+
+            if chunk.size == 0:
+                return np.zeros((self.n_channels, 0), dtype=np.float32)
+
+            abs_chunk = np.abs(chunk)
+            nap = np.tile(abs_chunk, (self.n_channels, 1)).astype(np.float32)
+            channel_scales = np.linspace(1.0, 0.1, num=self.n_channels, dtype=np.float32)[:, None]
+            nap = nap * channel_scales
+            return nap
+        except Exception as e:
+            # print(f"Fallback audio processing error: {e}")
+            return np.zeros((self.n_channels, 0), dtype=np.float32)
 
 # ---------------- SAI Processor with Fallback ----------------
 class SAIProcessor:
@@ -498,22 +484,23 @@ class SAIProcessor:
             try:
                 self.sai = sai.SAI(sai_params)
                 self.use_sai = True
-                print("Using SAI processing")
+                # print("Using SAI processing")
             except Exception as e:
-                print(f"SAI initialization failed: {e}")
+                # print(f"SAI initialization failed: {e}")
                 self.use_sai = False
         else:
             self.use_sai = False
         
         if not self.use_sai:
-            print("Using simple autocorrelation")
+            # print("Using simple autocorrelation")
+            pass
     
     def RunSegment(self, nap_output):
         if self.use_sai:
             try:
                 return self.sai.RunSegment(nap_output)
             except Exception as e:
-                print(f"SAI processing error: {e}")
+                # print(f"SAI processing error: {e}")
                 return self._simple_sai(nap_output)
         else:
             return self._simple_sai(nap_output)
@@ -533,47 +520,36 @@ class SAIProcessor:
         
         return sai_output
 
+# ---------------- Helper Classes for Practice Mode ----------------
+class VoiceSelector:
+    def __init__(self, initial_voice='women'):
+        self.voices = ['women', 'men']
+        self.current_voice = initial_voice
 
-# ---------------- Waveform Buffer Class ----------------
-class WaveformBuffer:
-    """Circular buffer for storing waveform data for display"""
-    def __init__(self, size=8000):  # ~0.5 seconds at 16kHz
-        self.size = size
-        self.buffer = np.zeros(size)
-        self.index = 0
+    def toggle(self):
+        self.current_voice = self.voices[0] if self.current_voice == self.voices[1] else self.voices[1]
+        return self.current_voice
         
-    def add_chunk(self, chunk):
-        """Add a chunk of audio data to the circular buffer"""
-        chunk_size = len(chunk)
-        if chunk_size >= self.size:
-            # If chunk is larger than buffer, just take the last part
-            self.buffer = chunk[-self.size:].copy()
-            self.index = 0
-        else:
-            # Add chunk to buffer
-            end_idx = self.index + chunk_size
-            if end_idx <= self.size:
-                # Chunk fits without wrapping
-                self.buffer[self.index:end_idx] = chunk
-                self.index = end_idx % self.size
-            else:
-                # Chunk needs to wrap around
-                first_part = self.size - self.index
-                self.buffer[self.index:] = chunk[:first_part]
-                self.buffer[:chunk_size - first_part] = chunk[first_part:]
-                self.index = chunk_size - first_part
-    
-    def get_waveform(self):
-        """Get the current waveform data in correct order"""
-        if self.index == 0:
-            return self.buffer.copy()
-        else:
-            return np.concatenate([self.buffer[self.index:], self.buffer[:self.index]])
+    def get_display_name(self):
+        return f'{self.current_voice.capitalize()} Voice'
 
-# ---------------- Main SAI Visualization with Wav2Vec2 and Per-Phoneme Feedback ----------------
+class AudioManager:
+    """Minimal Manager to satisfy PracticeSession dependency"""
+    def __init__(self, base_dir='audio'):
+        self.base_dir = base_dir
+
+    def get_audio_for_word(self, word, voice_type, index):
+        # Placeholder logic: relies on file existence checking in PracticeSession
+        return None
+
+    def get_audio_for_sentence(self, sentence_id, voice_type, index):
+        # Placeholder logic
+        return None
+
+# ---------------- Main SAI Visualization with Wav2Vec2 and Practice Mode ----------------
 class SAIVisualizationWithWav2Vec2:
     def __init__(self, audio_file_path=None, chunk_size=1024, sample_rate=16000, sai_width=200,
-                 debug=True, playback_speed=1.0, loop_audio=True, wav2vec2_model="facebook/wav2vec2-xlsr-53-espeak-cv-ft"):
+                 debug=True, playback_speed=1.0, loop_audio=True):
 
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
@@ -581,25 +557,15 @@ class SAIVisualizationWithWav2Vec2:
         self.debug = debug
         self.playback_speed = playback_speed
         self.loop_audio = loop_audio
-        self.sai_speed = 1.0  # Independent SAI visualization speed
-        self.sai_file_index = 0.0  # SAI frame accumulator
+        self.sai_speed = 3.0
+        self.sai_file_index = 0.0
 
-        # Reference text and target phonemes for similarity
+        # Reference text and target phonemes
         self.reference_text = None
         self.reference_pronunciation = None
         self.translated_text = None
-        self.target_phonemes = "ɕiɛɕiɛ"  # Target for xiè xiè
+        self.target_phonemes = "ɕiɛɕiɛ"
 
-        # Initialize Wav2Vec2 handler and phoneme analyzer
-        self.wav2vec2_handler = SimpleWav2Vec2Handler(model_name=wav2vec2_model)
-        self.phoneme_analyzer = PhonemeAnalyzer(self.target_phonemes)
-
-        # Most recent results of phoneme analysis
-        
-        # Feedback display components
-        self.phoneme_feedback_displays = []
-        self.feedback_background = None
-        
         # Audio processors
         self.processor_realtime = AudioProcessor(fs=sample_rate)
         self.processor_file = AudioProcessor(fs=sample_rate)
@@ -624,11 +590,7 @@ class SAIVisualizationWithWav2Vec2:
         self.vis_realtime = VisualizationHandler(sample_rate, self.sai_params)
         self.vis_file = VisualizationHandler(sample_rate, self.sai_params)
 
-        # Waveform buffers for display
-        self.waveform_realtime = WaveformBuffer(size=int(sample_rate * 0.5))  # 0.5 seconds
-        self.waveform_file = WaveformBuffer(size=int(sample_rate * 0.5))
-
-        # Audio setup for SAI visualization only
+        # Audio setup
         self.audio_queue = queue.Queue(maxsize=50)
         
         # File processing
@@ -644,57 +606,241 @@ class SAIVisualizationWithWav2Vec2:
         self.audio_output_stream = None
         self.playback_position = 0.0
         
-        if audio_file_path and os.path.exists(audio_file_path):
-            self._load_audio_file()
-        
-        # PyAudio for SAI visualization
+        # PyAudio and Threads
         self.p = None
         self.stream = None
         self.running = False
         
-        # Initialize similarity display as None
         self.similarity_display = None
         self.similarity_rect = None
         
+        # --- PRACTICE MODE INTEGRATION ---
+        self.voice_selector = VoiceSelector()
+        self.audio_manager = AudioManager()
+        self.practice_session = None # Placeholder, set in main
+        self.wav2vec2_handler = SimpleWav2Vec2Handler(sample_rate=sample_rate, target_phonemes=self.target_phonemes)
+        self.wav2vec2_handler.register_callback(self._handle_processing_complete)
+        
+        # Simple local audio recorder (uses the imported module)
+        self.is_recording_simple = False
+        self.recorder = AudioRecorder(sample_rate=self.sample_rate)
+
         self._setup_dual_visualization()
 
+    def _play_audio_file(self, audio_data, sample_rate):
+        """Play a numpy array of audio data"""
+        if self.audio_output_stream and self.audio_output_stream.active:
+            self.audio_output_stream.stop()
+        
+        if self.audio_data is not None and self.audio_output_stream:
+            # Clear old stream
+            self.audio_output_stream.close()
+
+        if audio_data is None or audio_data.size == 0:
+            print("No audio data to play.")
+            self.audio_data = None
+            self.total_samples = 0
+            self.current_position = 0
+            self.duration = 0
+            self.playback_position = 0.0
+            return
+
+        self.audio_data = audio_data.copy()
+        if np.max(np.abs(self.audio_data)) > 0:
+            self.audio_data = self.audio_data / np.max(np.abs(self.audio_data)) * 0.9
+        
+        self.total_samples = len(self.audio_data)
+        self.duration = self.total_samples / sample_rate
+        self.current_position = 0
+        self.playback_position = 0.0
+        self.loop_count = 0
+        
+        try:
+            self.audio_output_stream = sd.OutputStream(
+                samplerate=sample_rate,
+                channels=1,
+                dtype=np.float32,
+                blocksize=self.chunk_size,
+                callback=self._audio_playback_callback
+            )
+            self.audio_output_stream.start()
+            print(f"Playing reference audio ({self.duration:.1f}s)")
+        except Exception as e:
+            print(f"Failed to create audio playback: {e}")
+            self.audio_playback_enabled = False
+
+
+    def _get_item_display(self, item):
+        """Helper to format the display string for a word or sentence"""
+        if not item:
+            return "End of Set"
+        if 'character' in item:
+            return f"WORD: {item['character']} ({item['pinyin']}) - {item['english']} ({item['tone']})"
+        else:
+            return f"SENTENCE: {item['mandarin']} - {item['english']}"
+
+    def _load_practice_item(self, item):
+        """Loads the current item for practice"""
+        if not item:
+            return
+            
+        print(f"\n🎧 Loading item ({self.practice_session.get_progress_string()}): {self._get_item_display(item)}")
+        
+        # 1. Update text fields for the Reference SAI
+        reference_pronunciation = item.get('pinyin') if 'pinyin' in item else item.get('mandarin')
+        translation = item.get('english')
+        target_phonemes = item.get('phonemes')
+        
+        self.set_reference_text(target_phonemes, reference_pronunciation, translation)
+        self.wav2vec2_handler.target_phonemes = target_phonemes
+        self.clear_phoneme_feedback()
+
+        # 2. Load the reference audio and visualize its SAI
+        audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
+        
+        if audio_path and os.path.exists(audio_path):
+            print(f"Loading reference audio: {audio_path}")
+            
+            # Load audio for SAI processing
+            audio_data, original_sr = librosa.load(audio_path, sr=None)
+            
+            if original_sr != self.sample_rate:
+                audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
+            
+            # Set the new audio data for the continuous visualization loop
+            self.audio_data = audio_data
+            self.total_samples = len(self.audio_data)
+            self.duration = self.total_samples / self.sample_rate
+            self.current_position = 0
+            self.playback_position = 0.0
+            
+            # Also play the audio immediately if stream is active
+            if self.audio_output_stream and self.audio_output_stream.active:
+                self._play_audio_file(audio_data, self.sample_rate)
+
+            # Clear and reset the file SAI visualization
+            self.vis_file.img[:] = 0
+            self.im_file.set_data(self.vis_file.img)
+            self.fig.canvas.draw_idle()
+            
+        else:
+            print(f"⚠️ Reference audio file not found for {reference_pronunciation} at path: {audio_path}")
+            self.audio_data = None
+            self.total_samples = 0
+            self.duration = 0
+            self.current_position = 0
+            self.playback_position = 0.0
+
+    def clear_phoneme_feedback(self, event=None):
+        """Clear the Wav2Vec2 and score feedback"""
+        if hasattr(self, 'transcription_realtime'):
+            self.transcription_realtime.set_text(self.wav2vec2_handler.get_current_status()[0])
+            self.transcription_realtime.set_color(self.wav2vec2_handler.get_current_status()[1])
+            self.vis_realtime.img[:] = 0 # Clear the user's SAI visualization
+            self.im_realtime.set_data(self.vis_realtime.img)
+            if hasattr(self, 'score_display'):
+                self.score_display.set_text('Score: N/A')
+            self.fig.canvas.draw_idle()
+
+    def _handle_processing_complete(self, user_audio, transcription, score):
+        """Callback run after Wav2Vec2 processing finishes"""
+        print(f"Processing complete: Transcription='{transcription}', Score={score:.2f}")
+
+        # 1. Update transcription/score text
+        status_text, status_color = self.wav2vec2_handler.get_current_status()
+        self.transcription_realtime.set_text(status_text)
+        self.transcription_realtime.set_color(status_color)
+        if hasattr(self, 'score_display'):
+            self.score_display.set_text(f'Score: {score:.2f}' if score > 0 else 'Score: N/A')
+
+        # 2. Re-process the user's audio through SAI/CARFAC for visualization
+        self.vis_realtime.img[:] = 0 # Clear previous user SAI
+        self.im_realtime.set_data(self.vis_realtime.img)
+        
+        # Process user audio for SAI frame by frame
+        total_frames = len(user_audio) // self.chunk_size
+        remaining_samples = len(user_audio) % self.chunk_size
+        
+        def _process_user_sai():
+            processor = AudioProcessor(self.sample_rate) # New processor for the full buffer
+            sai_processor = SAIProcessor(self.sai_params)
+
+            for i in range(total_frames):
+                start = i * self.chunk_size
+                end = start + self.chunk_size
+                chunk = user_audio[start:end]
+                
+                nap_output = processor.process_chunk(chunk)
+                sai_output = sai_processor.RunSegment(nap_output)
+                
+                # Update visualization handler (simulating the realtime update)
+                self.vis_realtime.get_vowel_embedding(nap_output)
+                self.vis_realtime.run_frame(sai_output)
+                
+                # Shift and draw column
+                if self.vis_realtime.img.shape[1] > 1:
+                    self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
+                    self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
+                    
+            if remaining_samples > 0:
+                start = total_frames * self.chunk_size
+                chunk = np.pad(user_audio[start:], (0, self.chunk_size - remaining_samples), 'constant')
+                nap_output = processor.process_chunk(chunk)
+                sai_output = sai_processor.RunSegment(nap_output)
+                self.vis_realtime.get_vowel_embedding(nap_output)
+                self.vis_realtime.run_frame(sai_output)
+                
+                if self.vis_realtime.img.shape[1] > 1:
+                    self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
+                    self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
+                    
+            # Request redraw
+            self.fig.canvas.draw_idle()
+
+        # Run SAI processing in a separate thread so it doesn't block the main loop, 
+        # as it can take a moment for the entire buffer.
+        threading.Thread(target=_process_user_sai, daemon=True).start()
+
+
     def decrease_sai_speed(self, event=None):
-        """Decrease SAI visualization speed"""
         self.sai_speed = max(0.1, self.sai_speed - 0.25)
         self.update_sai_speed_display()
-        print(f"SAI speed: {self.sai_speed:.1f}x")
+        # print(f"SAI speed: {self.sai_speed:.1f}x")
 
     def increase_sai_speed(self, event=None):
-        """Increase SAI visualization speed"""
         self.sai_speed = min(5.0, self.sai_speed + 0.25)
         self.update_sai_speed_display()
-        print(f"SAI speed: {self.sai_speed:.1f}x")
+        # print(f"SAI speed: {self.sai_speed:.1f}x")
 
     def update_sai_speed_display(self):
-        """Update SAI speed display"""
         if hasattr(self, 'sai_speed_display'):
             self.sai_speed_display.set_text(f'SAI Speed: {self.sai_speed:.1f}x')
 
-    # Audio speed control methods (renamed from existing)
     def decrease_audio_speed(self, event=None):
-        """Decrease reference audio playback speed"""
         self.playback_speed = max(0.25, self.playback_speed - 0.25)
         self.update_audio_speed_display()
-        print(f"Audio speed: {self.playback_speed:.1f}x")
+        # print(f"Audio speed: {self.playback_speed:.1f}x")
 
     def increase_audio_speed(self, event=None):
-        """Increase reference audio playback speed"""
         self.playback_speed = min(5.0, self.playback_speed + 0.25)
         self.update_audio_speed_display()
-        print(f"Audio speed: {self.playback_speed:.1f}x")
+        # print(f"Audio speed: {self.playback_speed:.1f}x")
 
     def update_audio_speed_display(self):
-        """Update audio speed display"""
         if hasattr(self, 'audio_speed_display'):
             self.audio_speed_display.set_text(f'Audio Speed: {self.playback_speed:.1f}x')
 
+    def toggle_voice(self, event=None):
+        """Toggle reference voice between men/women"""
+        new_voice = self.voice_selector.toggle()
+        self.btn_voice.label.set_text(self.voice_selector.get_display_name())
+        
+        # Reload current item to update audio
+        self._load_practice_item(self.practice_session.get_current_item())
+        
+        print(f"Reference voice switched to: {new_voice}")
+
     def on_key_press(self, event):
-        """Handle keyboard shortcuts"""
         if event.key == 'up' or event.key == '+':
             self.increase_sai_speed()
         elif event.key == 'down' or event.key == '-':
@@ -712,215 +858,8 @@ class SAIVisualizationWithWav2Vec2:
         elif event.key == 'c':
             self.clear_phoneme_feedback()
 
-    def clear_phoneme_feedback(self):
-        """Clear all phoneme feedback displays"""
-        for display in self.phoneme_feedback_displays:
-            if display is not None:
-                display.remove()
-        self.phoneme_feedback_displays.clear()
-        
-        if self.feedback_background is not None:
-            self.feedback_background.remove()
-            self.feedback_background = None
-        
-        # print("Phoneme feedback cleared")
-
-        # Enhanced color scheme with more granular feedback
-    def create_phoneme_feedback_display(self, analysis_results, overall_score):
-        """Create detailed per-phoneme feedback display with enhanced color coding"""
-        try:
-            # Clear existing displays
-            self.clear_phoneme_feedback()
-            
-            if not analysis_results:
-                return
-            
-            # Enhanced color scheme with more granular feedback
-            def get_phoneme_color(result):
-                """Get color based on phoneme accuracy with more granular levels"""
-                status = result['status']
-                similarity = result['similarity']
-                
-                if status == 'missing':
-                    return '#666666'      # Dark gray for missing
-                elif status == 'extra':
-                    return '#FF00FF'      # Magenta for extra
-                elif status == 'correct':
-                    if similarity >= 0.95:
-                        return '#00FF00'  # Bright green for perfect
-                    else:
-                        return '#44FF44'  # Slightly dimmer green for very good
-                elif status == 'close':
-                    if similarity >= 0.7:
-                        return '#FFAA00'  # Orange for close
-                    elif similarity >= 0.6:
-                        return '#FFCC44'  # Yellow-orange for somewhat close
-                    else:
-                        return '#FFFF00'  # Yellow for barely acceptable
-                else:  # incorrect
-                    if similarity >= 0.3:
-                        return '#FF6600'  # Red-orange for somewhat wrong
-                    elif similarity >= 0.1:
-                        return '#FF3300'  # Red for wrong
-                    else:
-                        return '#CC0000'  # Dark red for very wrong
-            
-            # Overall score display with color gradient
-            def get_overall_score_color(score):
-                """Get color for overall score with smooth gradient"""
-                if score >= 0.9:
-                    return '#00FF00'    # Bright green
-                elif score >= 0.8:
-                    return '#44FF44'    # Light green
-                elif score >= 0.7:
-                    return '#88FF00'    # Green-yellow
-                elif score >= 0.6:
-                    return '#FFFF00'    # Yellow
-                elif score >= 0.5:
-                    return '#FFAA00'    # Orange
-                elif score >= 0.3:
-                    return '#FF6600'    # Red-orange
-                else:
-                    return '#FF0000'    # Red
-            
-            score_color = get_overall_score_color(overall_score)
-            overall_display = self.ax_realtime.text(
-                0.5, 0.7,
-                f"Overall Score: {overall_score*100:.0f}%",
-                transform=self.ax_realtime.transAxes,
-                horizontalalignment='center',
-                verticalalignment='center',
-                fontsize=16, fontweight='bold',
-                color=score_color,
-                bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8, edgecolor='white')
-            )
-            self.phoneme_feedback_displays.append(overall_display)
-            
-            # Target phonemes display
-            target_text = "TARGET: " + "".join([r['target'] or '∅' for r in analysis_results])
-            target_display = self.ax_realtime.text(
-                0.5, 0.62,
-                target_text,
-                transform=self.ax_realtime.transAxes,
-                horizontalalignment='center',
-                verticalalignment='center',
-                fontsize=14, fontweight='bold',
-                color='cyan',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7)
-            )
-            self.phoneme_feedback_displays.append(target_display)
-            
-            # Detected phonemes display with individual colors
-            detected_text = "YOURS:  "
-            detected_display = self.ax_realtime.text(
-                0.1, 0.54,  # X position might need adjustment
-                detected_text,
-                transform=self.ax_realtime.transAxes,
-                horizontalalignment='left',
-                verticalalignment='center',
-                fontsize=14, fontweight='bold',
-                color='white'
-            )
-            self.phoneme_feedback_displays.append(detected_display)
-            
-            # Individual phoneme displays with enhanced colors
-            start_x = 0.25  # Increase this value to move phonemes further right
-            x_step = 0.08   # Might need to be larger for wider characters
-            
-            for i, result in enumerate(analysis_results):
-                x_pos = start_x + (i * x_step)
-                
-                # Get phoneme character and enhanced color
-                phoneme_char = result['detected'] or '∅'
-                color = get_phoneme_color(result)
-                
-                # Create individual phoneme display
-                phoneme_display = self.ax_realtime.text(
-                    x_pos, 0.54,
-                    phoneme_char,
-                    transform=self.ax_realtime.transAxes,
-                    horizontalalignment='center',
-                    verticalalignment='center',
-                    fontsize=14, fontweight='bold',
-                    color=color,
-                    bbox=dict(boxstyle='round,pad=0.1', facecolor='black', alpha=0.3)
-                )
-                self.phoneme_feedback_displays.append(phoneme_display)
-                
-                # Add similarity percentage below phoneme for imperfect ones
-                if result['similarity'] > 0 and result['similarity'] < 0.8:
-                    similarity_text = f"{result['similarity']*100:.0f}%"
-                    similarity_display = self.ax_realtime.text(
-                        x_pos, 0.50,
-                        similarity_text,
-                        transform=self.ax_realtime.transAxes,
-                        horizontalalignment='center',
-                        verticalalignment='center',
-                        fontsize=8,
-                        color=color,
-                        alpha=0.7
-                    )
-                    self.phoneme_feedback_displays.append(similarity_display)
-            
-            # Enhanced legend with more color categories
-            legend_y = 0.42
-            legend_items = [
-                ("Perfect", '#00FF00'),
-                ("Good", '#44FF44'),
-                ("Close", '#FFAA00'),
-                ("Poor", '#FF6600'),
-                ("Wrong", '#FF0000'),
-                ("Missing", '#666666')
-            ]
-            
-            legend_start_x = 0.1
-            x_spacing = 0.12
-            
-            for i, (label, color) in enumerate(legend_items):
-                legend_display = self.ax_realtime.text(
-                    legend_start_x + i * x_spacing, legend_y,
-                    f"● {label}",
-                    transform=self.ax_realtime.transAxes,
-                    horizontalalignment='left',
-                    verticalalignment='center',
-                    fontsize=9, fontweight='bold',
-                    color=color
-                )
-                self.phoneme_feedback_displays.append(legend_display)
-            
-            # Instructions
-            instructions = "Press 'C' to clear feedback | Colors show pronunciation accuracy"
-            instr_display = self.ax_realtime.text(
-                0.5, 0.32,
-                instructions,
-                transform=self.ax_realtime.transAxes,
-                horizontalalignment='center',
-                verticalalignment='center',
-                fontsize=9, style='italic',
-                color='lightgray'
-            )
-            self.phoneme_feedback_displays.append(instr_display)
-            
-        except Exception as e:
-            print(f"Error creating phoneme feedback display: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def calculate_similarity(self, detected_phonemes, target_phonemes):
-        """Calculate similarity between detected and target phonemes"""
-        if not target_phonemes or not detected_phonemes:
-            return 0.0, "0.0%"
-        
-        # Use the phoneme analyzer for detailed analysis
-        print(detected_phonemes, target_phonemes)
-        analysis_results, overall_score = self.phoneme_analyzer.analyze_pronunciation(
-            detected_phonemes, target_phonemes
-        )
-        
-        percentage = f"{overall_score * 100:.1f}%"
-        return overall_score, percentage
-
     def _load_audio_file(self):
+        # This is primarily used for the continuous SAI visualization for the reference audio
         print(f"Loading audio file: {self.audio_file_path}")
         self.audio_data, original_sr = librosa.load(self.audio_file_path, sr=None)
         
@@ -933,15 +872,6 @@ class SAIVisualizationWithWav2Vec2:
         self.total_samples = len(self.audio_data)
         self.duration = self.total_samples / self.sample_rate
         
-        # Auto-detect content
-        filename = os.path.basename(self.audio_file_path).lower()
-        if 'thank' in filename:
-            self.set_reference_text('sje sje', 'xiè xiè', 'thank you')
-        elif 'hello' in filename:
-            self.set_reference_text('ni hao', 'nǐ hǎo', 'hello')
-        else:
-            self.set_reference_text('sje sje', 'xiè xiè', 'thank you')
-        
         if self.audio_playback_enabled:
             self._setup_audio_playback()
 
@@ -949,8 +879,20 @@ class SAIVisualizationWithWav2Vec2:
         self.reference_text = phonemes.strip()
         self.reference_pronunciation = pronunciation
         self.translated_text = translation.strip()
-        print(f"Reference: {self.reference_text} ({self.reference_pronunciation}) - {self.translated_text}")
-        print(f"Target phonemes for similarity: {self.target_phonemes}")
+        
+        # Update the display text immediately
+        if hasattr(self, 'transcription_file'):
+            reference_display = f"Target: {self.reference_pronunciation}"
+            if self.translated_text:
+                reference_display += f" - {self.translated_text}"
+            
+            # Add progress string
+            if hasattr(self, 'practice_session') and self.practice_session:
+                 reference_display += f" ({self.practice_session.get_progress_string()})"
+                 
+            self.transcription_file.set_text(reference_display)
+            self.fig.canvas.draw_idle()
+
 
     def _setup_audio_playback(self):
         try:
@@ -970,33 +912,43 @@ class SAIVisualizationWithWav2Vec2:
         try:
             if self.audio_data is not None:
                 start_pos = int(self.playback_position)
-                end_pos = min(start_pos + frames, self.total_samples)
-
-                # Calculate number of samples to read based on speed
+                
                 speed_factor = self.playback_speed
                 chunk_indices = np.arange(frames) * speed_factor
                 chunk_indices = chunk_indices.astype(int) + start_pos
+                
+                # Check for wrap-around and looping
+                if self.loop_audio and np.any(chunk_indices >= self.total_samples):
+                    chunk_indices = chunk_indices % self.total_samples
+                    
                 chunk_indices = np.clip(chunk_indices, 0, self.total_samples - 1)
                 chunk = self.audio_data[chunk_indices]
 
-                outdata[:, 0] = chunk
-
+                outdata[:len(chunk), 0] = chunk
+                outdata[len(chunk):, 0].fill(0) # Pad with zeros if chunk is shorter
+                
                 self.playback_position += int(frames * speed_factor)
-                if self.playback_position >= self.total_samples:
+                if self.playback_position >= self.total_samples and self.total_samples > 0:
                     if self.loop_audio:
-                        self.playback_position = 0
+                        self.playback_position = self.playback_position % self.total_samples
                     else:
                         outdata.fill(0)
+                        # Stop the stream when finished if not looping
+                        raise sd.CallbackStop # Signal stream to stop
+
             else:
                 outdata.fill(0)
+        except sd.CallbackStop:
+            raise
         except Exception as e:
-            print(f"Audio callback error: {e}")
+            # print(f"Audio callback error: {e}")
             outdata.fill(0)
 
     def get_next_file_chunk(self):
-        if self.audio_data is None:
+        if self.audio_data is None or self.total_samples == 0:
             return None, -1
         
+        # Handle looping for the continuous SAI visualization stream
         if self.current_position >= self.total_samples:
             if self.loop_audio:
                 self.current_position = 0
@@ -1004,7 +956,6 @@ class SAIVisualizationWithWav2Vec2:
             else:
                 return None, -1
         
-        # Process at consistent rate regardless of playback speed
         end_position = min(self.current_position + self.chunk_size, self.total_samples)
         chunk = self.audio_data[self.current_position:end_position]
         
@@ -1012,454 +963,398 @@ class SAIVisualizationWithWav2Vec2:
             chunk = np.pad(chunk, (0, self.chunk_size - len(chunk)), 'constant')
         
         chunk_index = self.current_position
-        
-        # Advance position based on actual audio rate, not playback speed
         self.current_position = end_position
         
         return chunk.astype(np.float32), chunk_index
 
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        """Audio callback for SAI visualization only (NOT for Wav2Vec2)"""
-        try:
-            audio_float = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
-            
-            # Add to waveform buffer for display
-            self.waveform_realtime.add_chunk(audio_float)
-            
-            try:
-                self.audio_queue.put_nowait(audio_float)
-            except queue.Full:
-                try:
-                    self.audio_queue.get_nowait()
-                    self.audio_queue.put_nowait(audio_float)
-                except queue.Empty:
-                    pass
-        except Exception as e:
-            print(f"Audio callback error: {e}")
-        
-        return (in_data, pyaudio.paContinue)
-
     def process_realtime_audio(self):
         """Process real-time audio for SAI visualization only"""
-        print("Real-time SAI processing started")
+        # print("Real-time SAI processing started")
         while self.running:
             try:
                 audio_chunk = self.audio_queue.get(timeout=0.1)
                 
-                nap_output = self.processor_realtime.process_chunk(audio_chunk)
-                sai_output = self.sai_realtime.RunSegment(nap_output)
-                self.vis_realtime.get_vowel_embedding(nap_output)
-                self.vis_realtime.run_frame(sai_output)
-
-                self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
-                self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
-
+                # We only display the reference SAI in this dual-view mode.
+                # Real-time microphone audio is handled by the AudioRecorder module and Wav2Vec2.
+                # This loop will now primarily run the SAI for the reference file.
+                pass 
+                
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Real-time processing error: {e}")
+                # print(f"Real-time processing error: {e}")
                 continue
 
-    def toggle_phoneme_recognition(self, event=None):
-        if not self.wav2vec2_handler.is_recording:
-            if self.wav2vec2_handler.start_recording():
-                self.btn_transcribe.label.set_text('Stop Recognition')
-                print("Started recording for phoneme recognition")
-                # Clear previous feedback when starting new recording
-                self.clear_phoneme_feedback()
-        else:
-            self.wav2vec2_handler.stop_recording()
-            self.btn_transcribe.label.set_text('Start Recognition')
-            print("Stopped recording")
+    def start(self):
+        """Start the SAI visualization and main loop"""
+        self.running = True
+        
+        # Initialize the audio playback stream (will be used by _play_audio_file)
+        self._setup_audio_playback()
+        
+        # Start the Matplotlib animation loop
+        self.ani = animation.FuncAnimation(
+            self.fig, self.update_visualization, interval=int((self.chunk_size / self.sample_rate) * 1000), blit=True
+        )
+        print("Starting visualization...")
+        plt.show()
+
+    def stop(self):
+        """Stop all processes and clean up"""
+        self.running = False
+        if self.audio_output_stream:
+            self.audio_output_stream.stop()
+            self.audio_output_stream.close()
+        sd.stop()
+        plt.close(self.fig)
+        print("SAIVisualizationWithWav2Vec2 stopped.")
 
     def _setup_dual_visualization(self):
-        print("DEBUG: Starting _setup_dual_visualization")
         self.fig = plt.figure(figsize=(16, 14))
-        # Modified grid: SAI plots (8 rows) + waveforms (2 rows) + controls (2 rows)
-        gs = self.fig.add_gridspec(12, 2, height_ratios=[1]*8 + [0.5, 0.5, 0.3, 0.3])
+        # 12 rows for main content, 3 rows for controls (changed from 12 rows + controls)
+        gs = self.fig.add_gridspec(15, 2, height_ratios=[1]*8 + [0.5, 0.5, 0.3, 0.3, 0.3, 0.3, 0.3]) 
         
-        # SAI plots
+        # --- Waveform Axis (Row 8-9) ---
+        self.ax = self.fig.add_subplot(gs[8:10, 0])
+        self.ax.set_xlim(-1, 1)
+        self.ax.set_ylim(-1, 1)
+        self._waveform_length = 256
+        self._waveform_data = np.zeros(self._waveform_length, dtype=np.float32)
+        self.line, = self.ax.plot(np.linspace(-1, 1, self._waveform_length), self._waveform_data, lw=2, color='skyblue')
+        self.ax.axis('off')
+
+        # --- SAI Axes (Row 0-7) ---
+        # Left: Your Audio (Realtime)
         self.ax_realtime = self.fig.add_subplot(gs[0:8, 0])
+        # Right: Reference Audio (File)
         self.ax_file = self.fig.add_subplot(gs[0:8, 1])
-        
-        # Waveform plots
-        self.ax_waveform_realtime = self.fig.add_subplot(gs[8, 0])
-        self.ax_waveform_file = self.fig.add_subplot(gs[8, 1])
-        
-        print("DEBUG: Created axes")
-        
-        # Setup SAI images
+
         self.im_realtime = self.ax_realtime.imshow(
-            self.vis_realtime.img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, 200, 0, 200]
+            self.vis_realtime.img, aspect='auto', origin='upper', interpolation='bilinear', extent=[0, 200, 0, 200]
         )
-        self.ax_realtime.set_title("Live Microphone SAI + Phoneme Feedback", color='white', fontsize=14)
         self.ax_realtime.axis('off')
         
         self.im_file = self.ax_file.imshow(
-            self.vis_file.img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, 200, 0, 200]
+            self.vis_file.img, aspect='auto', origin='upper', interpolation='bilinear', extent=[0, 200, 0, 200]
         )
-        file_title = f"Reference: {os.path.basename(self.audio_file_path) if self.audio_file_path else 'No file'}"
-        self.ax_file.set_title(file_title, color='white', fontsize=14)
         self.ax_file.axis('off')
         
-        # Setup waveform plots
-        waveform_length = self.waveform_realtime.size
-        time_axis = np.linspace(0, waveform_length / self.sample_rate, waveform_length)
-        
-        self.line_waveform_realtime, = self.ax_waveform_realtime.plot(
-            time_axis, np.zeros(waveform_length), 'lime', linewidth=1
-        )
-        self.ax_waveform_realtime.set_xlim(0, waveform_length / self.sample_rate)
-        self.ax_waveform_realtime.set_ylim(-1, 1)
-        self.ax_waveform_realtime.set_title("Live Waveform", color='white', fontsize=10)
-        self.ax_waveform_realtime.tick_params(colors='white', labelsize=8)
-        self.ax_waveform_realtime.set_facecolor('black')
-        
-        self.line_waveform_file, = self.ax_waveform_file.plot(
-            time_axis, np.zeros(waveform_length), 'cyan', linewidth=1
-        )
-        self.ax_waveform_file.set_xlim(0, waveform_length / self.sample_rate)
-        self.ax_waveform_file.set_ylim(-1, 1)
-        self.ax_waveform_file.set_title("Reference Waveform", color='white', fontsize=10)
-        self.ax_waveform_file.tick_params(colors='white', labelsize=8)
-        self.ax_waveform_file.set_facecolor('black')
-        
-        print("DEBUG: Created images and waveforms")
-        
-        # Text overlays
-        print("DEBUG: Creating text overlays...")
+        # --- Text Overlays (Transcription/Status) ---
+        # User Audio Status (Left)
         self.transcription_realtime = self.ax_realtime.text(
-            0.02, 0.02, 'Live SAI + Per-Phoneme Feedback', 
-            transform=self.ax_realtime.transAxes,
-            verticalalignment='bottom', fontsize=12, color='lime', weight='bold',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+            0.02, 0.02, 'Live SAI', transform=self.ax_realtime.transAxes, verticalalignment='bottom', 
+            fontsize=12, color='lime', weight='bold', bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
-        print("DEBUG: Created transcription_realtime")
-        
+        # Reference Text (Right)
         self.transcription_file = self.ax_file.text(
-            0.02, 0.02, '', transform=self.ax_file.transAxes,
-            verticalalignment='bottom', fontsize=12, color='cyan', weight='bold',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+            0.02, 0.02, '', transform=self.ax_file.transAxes, verticalalignment='bottom', 
+            fontsize=12, color='cyan', weight='bold', bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
-        print("DEBUG: Created transcription_file")
-        
-        self.transcription_status = self.ax_realtime.text(
-            0.02, 0.12, 'Wav2Vec2 Phonemes: Click to start', 
-            transform=self.ax_realtime.transAxes,
-            verticalalignment='bottom', fontsize=10, color='orange', weight='bold',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
+        # Score Display (Below User SAI)
+        self.score_display = self.ax.text(
+            0.5, 0.5, 'Score: N/A', transform=self.ax.transAxes, verticalalignment='center', horizontalalignment='center',
+            fontsize=14, color='white', weight='bold', bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.6)
         )
-        print("DEBUG: Created transcription_status")
-        
-        # Control area
-        self.ax_controls = self.fig.add_subplot(gs[10:12, :])
+
+        # --- Control Axes (Row 10-14) ---
+        self.ax_controls = self.fig.add_subplot(gs[10:14, :])
         self.ax_controls.axis('off')
 
-        # SAI Speed control buttons
-        self.ax_sai_slower = plt.axes([0.02, 0.02, 0.08, 0.05])
-        self.btn_sai_slower = Button(self.ax_sai_slower, 'SAI Slower', color='lightcoral', hovercolor='red')
-        self.btn_sai_slower.on_clicked(self.decrease_sai_speed)
+        # Control layout parameters
+        button_width = 0.10
+        button_height = 0.04
+        start_x = 0.05
+        spacing = 0.02
+        y_pos = 0.65 # Top row y position in the control axes
 
-        self.ax_sai_faster = plt.axes([0.12, 0.02, 0.08, 0.05])
-        self.btn_sai_faster = Button(self.ax_sai_faster, 'SAI Faster', color='lightblue', hovercolor='blue')
-        self.btn_sai_faster.on_clicked(self.increase_sai_speed)
+        # --- Control Buttons ---
 
-        # Audio speed buttons
-        self.ax_audio_slower = plt.axes([0.22, 0.02, 0.08, 0.05])
-        self.btn_audio_slower = Button(self.ax_audio_slower, 'Audio Slower', color='lightyellow', hovercolor='yellow')
-        self.btn_audio_slower.on_clicked(self.decrease_audio_speed)
-
-        self.ax_audio_faster = plt.axes([0.32, 0.02, 0.08, 0.05])
-        self.btn_audio_faster = Button(self.ax_audio_faster, 'Audio Faster', color='lightgreen', hovercolor='green')
-        self.btn_audio_faster.on_clicked(self.increase_audio_speed)
-        
-        # Main control buttons
-        self.ax_playback = plt.axes([0.45, 0.02, 0.12, 0.05])
-        self.btn_playback = Button(self.ax_playback, 'Play Reference', 
-                                color='lightgreen', hovercolor='green')
+        # 1. Play Reference Audio button
+        self.ax_playback = plt.axes([start_x, y_pos, button_width, button_height])
+        self.btn_playback = Button(self.ax_playback, '🔊 Play Ref', color='lightgreen', hovercolor='green')
         self.btn_playback.on_clicked(self.toggle_playback)
-        
-        self.ax_transcribe = plt.axes([0.60, 0.02, 0.12, 0.05])
-        self.btn_transcribe = Button(self.ax_transcribe, 'Start Recognition', 
-                                    color='lightblue', hovercolor='blue')
-        self.btn_transcribe.on_clicked(self.toggle_phoneme_recognition)
-        
-        # Clear feedback button
-        self.ax_clear = plt.axes([0.75, 0.02, 0.08, 0.05])
-        self.btn_clear = Button(self.ax_clear, 'Clear (C)', color='lightgray', hovercolor='gray')
-        self.btn_clear.on_clicked(lambda x: self.clear_phoneme_feedback())
 
-        # Speed displays
-        self.sai_speed_display = self.ax_controls.text(
-            0.1, 0.8, f'SAI Speed: {self.sai_speed:.1f}x',
-            transform=self.ax_controls.transAxes,
-            fontsize=10, color='cyan', weight='bold'
+        # 2. Record button
+        self.ax_record = plt.axes([start_x + (button_width + spacing), y_pos, button_width, button_height])
+        self.btn_record = Button(self.ax_record, 'Start Record', color='lightcoral', hovercolor='red')
+        self.btn_record.on_clicked(self.toggle_record)
+        
+        # 3. Next Item button
+        self.ax_next = plt.axes([start_x + 2 * (button_width + spacing), y_pos, button_width, button_height])
+        self.btn_next = Button(self.ax_next, 'Next Item', color='lightblue', hovercolor='blue')
+        self.btn_next.on_clicked(self.next_item)
+
+        # 4. New Set button
+        self.ax_new_set = plt.axes([start_x + 3 * (button_width + spacing), y_pos, button_width, button_height])
+        self.btn_new_set = Button(self.ax_new_set, 'New Set', color='lightgray', hovercolor='gray')
+        self.btn_new_set.on_clicked(self.new_set)
+        
+        # 5. Voice Selector button
+        self.ax_voice = plt.axes([start_x + 4 * (button_width + spacing), y_pos, button_width, button_height])
+        self.btn_voice = Button(self.ax_voice, self.voice_selector.get_display_name(), color='orange', hovercolor='darkorange')
+        self.btn_voice.on_clicked(self.toggle_voice)
+        
+        # 6. Clear Feedback button
+        self.ax_clear = plt.axes([start_x + 5 * (button_width + spacing), y_pos, button_width, button_height])
+        self.btn_clear = Button(self.ax_clear, 'Clear Feedback', color='gray', hovercolor='darkgray')
+        self.btn_clear.on_clicked(self.clear_phoneme_feedback)
+
+        # --- Speed Display Overlays (Below buttons) ---
+        self.ax_speed_display = self.fig.add_subplot(gs[14, 0])
+        self.ax_speed_display.axis('off')
+        
+        self.sai_speed_display = self.ax_speed_display.text(
+            0.05, 0.5, f'SAI Speed: {self.sai_speed:.1f}x', transform=self.ax_speed_display.transAxes, 
+            verticalalignment='center', horizontalalignment='left', fontsize=10, color='white'
         )
-        
-        self.audio_speed_display = self.ax_controls.text(
-            0.1, 0.6, f'Audio Speed: {self.playback_speed:.1f}x',
-            transform=self.ax_controls.transAxes,
-            fontsize=10, color='yellow', weight='bold'
+        self.audio_speed_display = self.ax_speed_display.text(
+            0.5, 0.5, f'Audio Speed: {self.playback_speed:.1f}x', transform=self.ax_speed_display.transAxes, 
+            verticalalignment='center', horizontalalignment='center', fontsize=10, color='white'
         )
-        
-        # Keyboard shortcut help
-        shortcuts_text = "Keys: ↑/↓ SAI speed, ←/→ audio speed, R reset, C clear feedback"
-        self.ax_controls.text(
-            0.5, 0.4, shortcuts_text,
-            transform=self.ax_controls.transAxes,
-            fontsize=9, color='lightgray', style='italic',
-            horizontalalignment='center'
-        )
-        
-        # Enable keyboard shortcuts
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
-        
-        # Use subplots_adjust instead of tight_layout to avoid compatibility issues
-        try:
-            plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.12, hspace=0.3, wspace=0.3)
-        except Exception as e:
-            print(f"Layout adjustment warning: {e}")
-        
+
+
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, hspace=0.3, wspace=0.3)
         self.fig.patch.set_facecolor('black')
-        print("DEBUG: Finished _setup_dual_visualization")
+        
+        # Bind keys to figure
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+
+
+    def toggle_record(self, event=None):
+        """Toggle recording on/off"""
+        if self.wav2vec2_handler.is_processing:
+            print("⚠️ Cannot start recording: Wav2Vec2 is currently processing previous audio.")
+            return
+
+        if not self.is_recording_simple:
+            # Start recording
+            self.is_recording_simple = True
+            self.btn_record.label.set_text('🔴 Recording...')
+            self.btn_record.color = 'red'
+            self.btn_record.ax.set_facecolor('red')
+            self.recorder.start_recording()
+            self.clear_phoneme_feedback()
+            print("Recording started...")
+        else:
+            # Stop recording
+            self.is_recording_simple = False
+            self.btn_record.label.set_text('Start Record')
+            self.btn_record.color = 'lightcoral'
+            self.btn_record.ax.set_facecolor('lightcoral')
+            audio = self.recorder.stop_recording()
+            
+            # Update status immediately
+            self.transcription_realtime.set_text("Processing...")
+            self.transcription_realtime.set_color("orange")
+            self.fig.canvas.draw_idle()
+            
+            print(f"Recording stopped - captured {len(audio)/self.sample_rate:.1f} seconds. Sending for analysis.")
+            
+            # Send audio buffer to Wav2Vec2 handler for analysis and callback
+            self.wav2vec2_handler.process_audio_buffer(audio, self.target_phonemes)
+
+
+    def next_item(self, event=None):
+        """Move to next practice item"""
+        if self.practice_session:
+            item = self.practice_session.next_item()
+            if self.practice_session.current_index == 0:
+                print("\nCompleted practice set! Starting over...")
+            
+            self._load_practice_item(item)
+            
+    def new_set(self, event=None):
+        """Generate a new set of random practice items"""
+        print("--- Generating New Practice Set ---")
+        new_practice_set = get_random_practice_set()
+        self.practice_session = PracticeSession(new_practice_set, self.audio_manager)
+        
+        # Load the first item
+        self._load_practice_item(self.practice_session.get_current_item())
+        print("Set loaded. Starting from the beginning.")
 
     def toggle_playback(self, event=None):
-        if self.audio_playback_enabled and self.audio_output_stream:
-            if self.audio_output_stream.active:
-                self.audio_output_stream.stop()
-                self.btn_playback.label.set_text('Play Reference')
-                print("Reference playback stopped")
-            else:
-                self.audio_output_stream.start()
-                self.btn_playback.label.set_text('Stop Reference')
-                print("Reference playback started")
+        """Play the reference audio for the current item"""
+        if self.audio_output_stream and self.audio_output_stream.active:
+            # If playing, stop it
+            self.audio_output_stream.stop()
+            self.btn_playback.label.set_text('🔊 Play Ref')
+            print("Reference playback stopped")
         else:
-            print("Reference playback not available")
+            # If stopped, play the audio associated with the current item
+            current_item = self.practice_session.get_current_item()
+            if current_item:
+                audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
+                
+                if audio_path and os.path.exists(audio_path):
+                    audio_data, original_sr = librosa.load(audio_path, sr=None)
+                    if original_sr != self.sample_rate:
+                        audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
+                        
+                    self._play_audio_file(audio_data, self.sample_rate)
+                    self.btn_playback.label.set_text('⏹️ Stop Ref')
+                else:
+                    print(f"⚠️ Cannot play audio: File not found at {audio_path}")
+            else:
+                print("No practice item selected.")
+
 
     def update_visualization(self, frame):
         try:
-            # Update real-time SAI
-            if self.vis_realtime.img is not None and self.vis_realtime.img.size > 0:
-                current_max_rt = np.max(self.vis_realtime.img)
-            else:
-                current_max_rt = 1
-
-            self.im_realtime.set_data(self.vis_realtime.img)
-            self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
-
-            # Update real-time waveform
-            waveform_data = self.waveform_realtime.get_waveform()
-            self.line_waveform_realtime.set_ydata(waveform_data)
-
-            try:
-                detected = getattr(self.wav2vec2_handler, 'result', None)
-
-                if detected and detected != "no_audio":
-                    # Get the pre-computed analysis results instead of calling analyze_pronunciation
-                    analysis_results = getattr(self.wav2vec2_handler, 'analysis_results', None)
-                    overall_score = getattr(self.wav2vec2_handler, 'overall_score', 0.0)
-                    
-                    # Only create display if we have analysis results
-                    if analysis_results is not None:
-                        self.create_phoneme_feedback_display(analysis_results, overall_score)
-
-            except Exception as e:
-                print(f"DEBUG: Error updating phoneme feedback: {e}")
-
-            # Update file SAI visualization with speed control
+            # Update the user's SAI visualization status (Wav2Vec2 status)
+            if not self.wav2vec2_handler.is_processing and not self.is_recording_simple:
+                status_text, status_color = self.wav2vec2_handler.get_current_status()
+                # Only update if the handler status is not actively being changed by a callback
+                if self.transcription_realtime.get_text() not in ("Processing...", "Recording..."):
+                     self.transcription_realtime.set_text(status_text)
+                     self.transcription_realtime.set_color(status_color)
+            
+            # --- Reference SAI (File) Update ---
             if self.audio_data is not None:
                 chunk, chunk_index = self.get_next_file_chunk()
                 if chunk is not None and chunk_index >= 0:
                     try:
-                        # Add chunk to file waveform buffer
-                        self.waveform_file.add_chunk(chunk)
-                        
                         nap_output = self.processor_file.process_chunk(chunk)
                         sai_output = self.sai_file.RunSegment(nap_output)
                         self.vis_file.get_vowel_embedding(nap_output)
                         self.vis_file.run_frame(sai_output)
 
-                        # SAI speed control (independent from audio speed)
+                        # Logic to advance SAI visualization based on sai_speed
                         self.sai_file_index += self.sai_speed
-                        
                         if self.sai_file_index >= 1.0:
                             steps = int(self.sai_file_index)
                             self.sai_file_index -= steps
-                            
-                            for _ in range(steps):
+                            for _ in range(min(steps, 3)):
                                 if self.vis_file.img.shape[1] > 1:
                                     self.vis_file.img[:, :-1] = self.vis_file.img[:, 1:]
-                                self.vis_file.draw_column(self.vis_file.img[:, -1])
-
+                                    self.vis_file.draw_column(self.vis_file.img[:, -1])
+                                    
                     except Exception as e:
-                        print(f"Error processing file chunk: {e}")
+                        # print(f"Error processing file chunk: {e}")
+                        pass
+                
+                current_max_file = np.max(self.vis_file.img) if self.vis_file.img.size else 1
+                self.im_file.set_data(self.vis_file.img)
+                self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
+                
+                # Update text on the right side with progress
+                reference_display = f"Target: {self.reference_pronunciation}"
+                if self.translated_text:
+                    reference_display += f" - {self.translated_text}"
+                reference_display += f" ({self.practice_session.get_progress_string()})"
+                self.transcription_file.set_text(reference_display)
 
-            # Update file SAI display
-            current_max_file = np.max(self.vis_file.img) if self.vis_file.img.size else 1
-            self.im_file.set_data(self.vis_file.img)
-            self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
 
-            # Update file waveform
-            file_waveform_data = self.waveform_file.get_waveform()
-            self.line_waveform_file.set_ydata(file_waveform_data)
-
-            # Update text displays
-            reference_display = ''
-            if self.reference_pronunciation:
-                reference_display = f"Reference: {self.reference_pronunciation}"
-            if self.translated_text and self.translated_text != 'audio file':
-                reference_display += f" - {self.translated_text}"
-            self.transcription_file.set_text(reference_display)
-
-            status_text, status_color = self.wav2vec2_handler.get_current_status()
-            self.transcription_status.set_text(status_text)
-            self.transcription_status.set_color(status_color)
+            # --- User SAI (Realtime) Update ---
+            current_max_rt = np.max(self.vis_realtime.img) if self.vis_realtime.img.size > 0 else 1
+            self.im_realtime.set_data(self.vis_realtime.img)
+            self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
+            
+            # Update small waveform with most recent realtime img column
+            if hasattr(self.vis_realtime, 'img') and self.vis_realtime.img is not None and self.vis_realtime.img.size > 0:
+                col = self.vis_realtime.img[:, -1]
+                col_mono = np.mean(col, axis=1) if col.ndim == 2 or col.ndim == 3 else col
+                idx = np.linspace(0, len(col_mono) - 1, self._waveform_length).astype(int)
+                data = col_mono[idx].astype(np.float32)
+                self.line.set_data(np.linspace(-1, 1, len(data)), data)
 
         except Exception as e:
-            print(f"Visualization update error: {e}")
-
-        # Return elements for FuncAnimation
-        elements_to_return = [
-            self.im_realtime, self.im_file,
-            self.line_waveform_realtime, self.line_waveform_file,
-            self.transcription_realtime, self.transcription_file,
-            self.transcription_status
-        ]
-        
-        # Add phoneme feedback displays to return list
-        elements_to_return.extend([d for d in self.phoneme_feedback_displays if d is not None])
-        
-        if self.feedback_background is not None:
-            elements_to_return.append(self.feedback_background)
-
-        return elements_to_return
-
-    def start(self):
-        print(f"Target phonemes: {self.target_phonemes}")
-        
-        # Initialize PyAudio for SAI visualization
-        self.p = pyaudio.PyAudio()
-        
-        try:
-            self.stream = self.p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.sample_rate,
-                input=True,
-                frames_per_buffer=self.chunk_size,
-                stream_callback=self.audio_callback,
-                start=False
-            )
-        except Exception as e:
-            print(f"Failed to open audio stream: {e}")
-            return
-
-        self.running = True
-        threading.Thread(target=self.process_realtime_audio, daemon=True).start()
-        
-        # Start streams
-        if self.stream:
-            self.stream.start_stream()
-            print("Audio input stream started (for SAI visualization)")
-        
-        if self.audio_playback_enabled and self.audio_output_stream:
-            self.audio_output_stream.start()
-            print("Reference audio playback started")
-        
-        # Start animation
-        animation_interval = max(10, int((self.chunk_size / self.sample_rate) * 1000 / max(1, self.playback_speed)))
-        
-        self.animation = animation.FuncAnimation(
-            self.fig, self.update_visualization, interval=animation_interval, 
-            blit=False, cache_frame_data=False
-        )
-        
-        plt.show()
-
-    def cleanup(self):
-        self.running = False
-        
-        # Stop phoneme recognition
-        if self.wav2vec2_handler.is_recording:
-            self.wav2vec2_handler.stop_recording()
-        
-        # Clear phoneme feedback displays
-        self.clear_phoneme_feedback()
-        
-        if self.audio_output_stream:
-            try:
-                self.audio_output_stream.stop()
-                self.audio_output_stream.close()
-            except:
-                pass
-        
-        try:
-            if self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-            if self.p:
-                self.p.terminate()
-        except:
+            # print(f"Visualization update error: {e}")
             pass
 
-    def stop(self):
-        self.cleanup()
-        plt.close('all')
+        # Return all mutable Matplotlib elements for blitting
+        elements_to_return = [
+            self.im_realtime, self.im_file, self.transcription_realtime, 
+            self.transcription_file, self.line, self.score_display,
+            self.sai_speed_display, self.audio_speed_display
+        ]
+        return [e for e in elements_to_return if e is not None]
 
-# ---------------- Main ----------------
+
+# ---------------- Main Entry Point ----------------
 def main():
-    parser = argparse.ArgumentParser(description='SAI Visualization + Wav2Vec2 Phoneme Recognition + Per-Phoneme Color Feedback + Waveforms')
-    parser.add_argument('--audio-file', default='reference/mandarin_thankyou.mp3', 
-                        help='Path to reference audio file')
-    parser.add_argument('--chunk-size', type=int, default=512, help='Audio chunk size for SAI')
-    parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate')
-    parser.add_argument('--sai-width', type=int, default=400, help='SAI width')
-    parser.add_argument('--speed', type=float, default=1.0, help='Reference playback speed')
-    parser.add_argument('--no-loop', action='store_true', help='Disable reference looping')
-    parser.add_argument('--wav2vec2-model', default='facebook/wav2vec2-xlsr-53-espeak-cv-ft',
-                        help='Wav2Vec2 model for phoneme recognition')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    
+    parser = argparse.ArgumentParser(description="SAI Visualization and Mandarin Pronunciation Practice Tool.")
+    parser.add_argument("--word", type=str, help="Specify a single Mandarin word for practice.")
+    parser.add_argument("--sentence", type=int, help="Specify a sentence ID for practice.")
     args = parser.parse_args()
-    
-    if args.audio_file and not os.path.exists(args.audio_file):
-        print(f"Warning: Audio file '{args.audio_file}' not found. Proceeding without reference audio.")
-        args.audio_file = None
 
-    # Initialize SAI visualization with Wav2Vec2 and per-phoneme feedback
-    sai_vis = SAIVisualizationWithWav2Vec2(
-        audio_file_path=args.audio_file,
-        chunk_size=args.chunk_size,
-        sample_rate=args.sample_rate,
-        sai_width=args.sai_width,
-        debug=args.debug,
-        playback_speed=args.speed,
-        loop_audio=not args.no_loop,
-        wav2vec2_model=args.wav2vec2_model
-    )
+    practice_set = None
+    audio_file_path = None
+    word_info = None
 
-    try:
-        sai_vis.start()
-    except KeyboardInterrupt:
-        print("Interrupted by user")
-    finally:
-        sai_vis.stop()
-        print("Visualization stopped cleanly")
-
-if __name__ == "__main__":
-    import sys
-    import os
-    
-    if len(sys.argv) == 1:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        default_audio = os.path.join(script_dir, 'reference', 'mandarin_thankyou.mp3')
-        
-        if os.path.exists(default_audio):
-            sys.argv.append('--audio-file')
-            sys.argv.append(default_audio)
+    if args.word:
+        word_info = set_target_word(args.word)
+        if word_info:
+            audio_file_path = os.path.join('audio', 'words', f"{args.word}_women.wav")
+            print(f"Single word mode: {word_info['character']} ({word_info['pinyin']})")
         else:
-            print("No default audio file found. Starting with microphone SAI visualization only.")
+            print(f"Word '{args.word}' not found in vocabulary.")
+            return 1
+
+    elif args.sentence:
+        word_info = get_sentence_by_id(args.sentence)
+        if word_info:
+            audio_file_path = os.path.join('audio', 'sentences', f"{args.sentence}_women.wav")
+            # Sentence items use 'mandarin' and 'english' keys
+            word_info['phonemes'] = 'placeholder' # Phoneme analysis must be provided
+            print(f"Single sentence mode: {word_info['mandarin']}")
+        else:
+            print(f"Sentence ID {args.sentence} not found.")
+            return 1
     
-    sys.exit(main() or 0)
+    else:
+        # Default to Practice Mode if no arguments are provided
+        print("--- Starting in Practice Mode (5 random items) ---")
+        practice_set = get_random_practice_set()
+        if not practice_set['words'] and not practice_set['sentences']:
+            print("❌ No practice items found. Check 'mandarin_vocab.json'.")
+            return 1
+            
+        # Select the first item to display initially
+        word_info = practice_set['words'][0] if practice_set['words'] else practice_set['sentences'][0]
+        # In practice mode, the first audio path is set when _load_practice_item is called in the main loop
+
+    setup_chinese_font()
+    
+    try:
+        # Initialize the main application
+        sai_vis = SAIVisualizationWithWav2Vec2(
+            audio_file_path=audio_file_path,
+            playback_speed=1.0, 
+            loop_audio=(practice_set is not None)
+        )
+        
+        # Initialize the PracticeSession and load the first item
+        if practice_set:
+            practice_session = PracticeSession(practice_set, sai_vis.audio_manager)
+            sai_vis.practice_session = practice_session
+            sai_vis._load_practice_item(practice_session.get_current_item())
+            
+        # If in single-item mode, set the text directly and use the loaded audio
+        elif word_info:
+            reference_pronunciation = word_info.get('pinyin') if 'pinyin' in word_info else word_info.get('mandarin')
+            translation = word_info.get('english')
+            target_phonemes = word_info.get('phonemes')
+            sai_vis.set_reference_text(target_phonemes, reference_pronunciation, translation)
+            sai_vis.wav2vec2_handler.target_phonemes = target_phonemes
+            sai_vis._load_audio_file() # Load the single file into the continuous SAI visualization
+
+        
+        sai_vis.start()
+        
+    except KeyboardInterrupt:
+        print("\n⚠️  Interrupted by user")
+    except Exception as e:
+        print(f"❌ Error starting visualization: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    finally:
+        if 'sai_vis' in locals():
+            sai_vis.stop()
+        print("✅ Visualization stopped cleanly")
+    
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main())

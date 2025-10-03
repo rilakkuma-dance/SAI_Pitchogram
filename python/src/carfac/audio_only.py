@@ -51,66 +51,6 @@ def setup_chinese_font():
 
 setup_chinese_font()
 
-class SAIParams:
-    """SAI parameters"""
-    def __init__(self, num_channels, sai_width, future_lags, num_triggers_per_frame,
-                 trigger_window_width, input_segment_width, channel_smoothing_scale):
-        self.num_channels = num_channels
-        self.sai_width = sai_width
-        self.future_lags = future_lags
-        self.num_triggers_per_frame = num_triggers_per_frame
-        self.trigger_window_width = trigger_window_width
-        self.input_segment_width = input_segment_width
-        self.channel_smoothing_scale = channel_smoothing_scale
-
-class AudioProcessor:
-    """CARFAC audio processor"""
-    def __init__(self, fs=16000):
-        self.fs = fs
-        self.hypers, self.weights, self.state = carfac.design_and_init_carfac(
-            carfac.CarfacDesignParameters(fs=fs, n_ears=1)
-        )
-        self.n_channels = self.hypers.ears[0].car.n_ch
-        self.run_segment_jit = jax.jit(carfac.run_segment, static_argnames=['hypers', 'open_loop'])
-        print(f"CARFAC initialized with {self.n_channels} channels")
-
-    def process_chunk(self, audio_chunk):
-        if len(audio_chunk.shape) == 1:
-            audio_input = audio_chunk.reshape(-1, 1)
-        else:
-            audio_input = audio_chunk
-        audio_jax = jnp.array(audio_input, dtype=jnp.float32)
-        naps, _, self.state, _, _, _ = self.run_segment_jit(
-            audio_jax, self.hypers, self.weights, self.state, open_loop=False
-        )
-        return np.array(naps[:, :, 0]).T
-
-class SAIProcessor:
-    """SAI processor"""
-    def __init__(self, sai_params):
-        self.sai_params = sai_params
-        self.sai = sai.SAI(sai_params)
-        print(f"SAI initialized: {sai_params.sai_width} width, {sai_params.num_channels} channels")
-    
-    def RunSegment(self, nap_output):
-        return self.sai.RunSegment(nap_output)
-
-class VisualizationHandler:
-    """SAI visualization handler"""
-    def __init__(self, sample_rate, sai_params):
-        self.sample_rate = sample_rate
-        self.sai_params = sai_params
-        self.img = np.zeros((sai_params.num_channels, sai_params.sai_width))
-        self.sai_frame = np.zeros((sai_params.num_channels, sai_params.sai_width))
-    
-    def run_frame(self, sai_output):
-        self.sai_frame = sai_output
-    
-    def draw_column(self, column):
-        for ch in range(min(self.sai_params.num_channels, len(self.sai_frame))):
-            if ch < len(self.sai_frame) and self.sai_frame.shape[1] > 0:
-                column[ch] = np.mean(self.sai_frame[ch, :])
-
 class PracticeSet:
     """Manages practice sets - randomly selects 5 from 30 available items"""
     
@@ -118,87 +58,119 @@ class PracticeSet:
         self.all_items = []
         self.audio_base_path = Path(audio_base_path)
         
-        # 15 words from the JSON
+        # 15 words - WAV format
         words = [
-            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "audio": "men/1_shu.mp3"},
-            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "audio": "women/2_nvren.mp3"},
-            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "audio": "men/3_xiong.mp3"},
-            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "audio": "men/4_qu.mp3"},
-            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "audio": "women/6_xihuan.mp3"},
-            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "audio": "women/7_jiedao.mp3"},
-            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "audio": "men/8_xiongmao.mp3"},
-            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "audio": "women/9_shudian.mp3"},
-            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "audio": "men/10_qunian.mp3"},
-            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "audio": "women/11_zhongwu.mp3"},
-            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "audio": "men/12_yizi.mp3"},
-            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "audio": "women/13_xuexiao.mp3"},
-            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "audio": "men/14_yiyuan.mp3"},
-            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "audio": "women/15_youxi.mp3"},
-            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "audio": "men/16_ta.mp3"},
+            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "audio": "men/1_men.wav"},
+            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "audio": "women/2_women.wav"},
+            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "audio": "men/3_men.wav"},
+            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "audio": "men/4_men.wav"},
+            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "audio": "women/6_women.wav"},
+            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "audio": "women/7_women.wav"},
+            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "audio": "men/8_men.wav"},
+            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "audio": "women/9_women.wav"},
+            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "audio": "men/10_men.wav"},
+            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "audio": "women/11_women.wav"},
+            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "audio": "men/12_men.wav"},
+            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "audio": "women/13_women.wav"},
+            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "audio": "men/14_men.wav"},
+            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "audio": "women/15_women.wav"},
+            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "audio": "men/16_men.wav"},
         ]
         
-        # 15 sentences from the JSON
+        # 15 sentences - WAV format
         sentences = [
             {"type": "sentence", "id": 5, "chinese": "女人去买书", 
-             "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_woman.mp3"},
+             "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_women.wav"},
             {"type": "sentence", "id": 17, "chinese": "我喜欢吃苹果。", 
-             "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_woman.mp3"},
+             "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_men.wav"},
             {"type": "sentence", "id": 18, "chinese": "他去学校学习汉语。", 
-             "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_woman.mp3"},
+             "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_women.wav"},
             {"type": "sentence", "id": 19, "chinese": "熊猫在公园里玩。", 
-             "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_woman.mp3"},
+             "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_men.wav"},
             {"type": "sentence", "id": 20, "chinese": "街道上有很多人。", 
-             "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_woman.mp3"},
+             "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_women.wav"},
             {"type": "sentence", "id": 21, "chinese": "医院旁边有一家书店。", 
-             "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_woman.mp3"},
+             "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_men.wav"},
             {"type": "sentence", "id": 22, "chinese": "她是一个聪明的女人。", 
-             "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_woman.mp3"},
+             "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_women.wav"},
             {"type": "sentence", "id": 23, "chinese": "我每天中午吃午饭。", 
-             "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_woman.mp3"},
+             "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_men.wav"},
             {"type": "sentence", "id": 24, "chinese": "游戏很有趣。", 
-             "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_woman.mp3"},
+             "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_women.wav"},
             {"type": "sentence", "id": 25, "chinese": "请坐在椅子上。", 
-             "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_woman.mp3"},
+             "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_men.wav"},
             {"type": "sentence", "id": 26, "chinese": "我想去北京旅行。", 
-             "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_woman.mp3"},
+             "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_women.wav"},
             {"type": "sentence", "id": 27, "chinese": "学校的老师很好。", 
-             "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_woman.mp3"},
+             "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_men.wav"},
             {"type": "sentence", "id": 28, "chinese": "他每天早上跑步。", 
-             "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_woman.mp3"},
+             "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_women.wav"},
             {"type": "sentence", "id": 29, "chinese": "我在家里玩游戏。", 
-             "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_woman.mp3"},
+             "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_men.wav"},
             {"type": "sentence", "id": 30, "chinese": "她喜欢喝茶。", 
-             "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_woman.mp3"},
+             "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_women.wav"},
         ]
         
-        self.all_items = words + sentences
+        all_potential_items = words + sentences
+        
+        # Filter to only include items whose audio files actually exist
+        self.all_items = []
+        missing_files = []
+        for item in all_potential_items:
+            audio_path = self.audio_base_path / item['audio']
+            if audio_path.exists():
+                self.all_items.append(item)
+            else:
+                missing_files.append(str(audio_path))
+        
+        print(f"\nWAV audio files found: {len(self.all_items)} / {len(all_potential_items)}")
+        if missing_files:
+            print(f"Missing WAV files ({len(missing_files)}):")
+            for f in missing_files[:5]:
+                print(f"  - {f}")
+            if len(missing_files) > 5:
+                print(f"  ... and {len(missing_files) - 5} more")
+        
+        if len(self.all_items) == 0:
+            print("\nERROR: No WAV audio files found!")
+            print(f"Check directory: {self.audio_base_path}")
+            print("Expected structure:")
+            print("  reference/men/*.wav")
+            print("  reference/women/*.wav")
+            print("\nRun the MP3 to WAV converter first!")
+        
         self.current_set = []
         self.current_index = 0
         self.set_number = 0
     
     def generate_new_set(self):
-        """Randomly select 3 words and 2 sentences from the available items"""
-        # Separate words and sentences
+        """Randomly select 3 words and 2 sentences - words first, then sentences"""
+        if len(self.all_items) == 0:
+            print("ERROR: No items available to create practice set!")
+            return []
+        
         words = [item for item in self.all_items if item['type'] == 'word']
         sentences = [item for item in self.all_items if item['type'] == 'sentence']
         
-        # Randomly select 3 words and 2 sentences
-        selected_words = random.sample(words, min(3, len(words)))
-        selected_sentences = random.sample(sentences, min(2, len(sentences)))
+        num_words = min(3, len(words))
+        num_sentences = min(2, len(sentences))
         
-        # Combine and shuffle
-        self.current_set = selected_words + selected_sentences
-        random.shuffle(self.current_set)
+        selected_words = random.sample(words, num_words) if num_words > 0 else []
+        selected_sentences = random.sample(sentences, num_sentences) if num_sentences > 0 else []
+        
+        # Shuffle words and sentences separately, then combine with words first
+        random.shuffle(selected_words)
+        random.shuffle(selected_sentences)
+        self.current_set = selected_words + selected_sentences  # Words first, then sentences
         
         self.current_index = 0
         self.set_number += 1
-        print(f"\n=== Practice Set #{self.set_number} (3 Words + 2 Sentences) ===")
+        print(f"\n=== Practice Set #{self.set_number} ({num_words} Words + {num_sentences} Sentences) ===")
         for i, item in enumerate(self.current_set, 1):
             print(f"{i}. [{item['type'].upper()}] {item['chinese']} ({item['pinyin']}) - {item['english']}")
         return self.current_set
     
     def get_current_item(self):
-        """Get the current practice item"""
         if not self.current_set:
             self.generate_new_set()
         if self.current_index < len(self.current_set):
@@ -206,7 +178,6 @@ class PracticeSet:
         return None
     
     def next_item(self):
-        """Move to next item in set"""
         self.current_index += 1
         if self.current_index >= len(self.current_set):
             print(f"\n✓ Completed Set #{self.set_number}!")
@@ -214,7 +185,6 @@ class PracticeSet:
         return self.get_current_item()
     
     def get_progress(self):
-        """Get current progress string"""
         if not self.current_set:
             return "No set active"
         return f"Item {self.current_index + 1} of {len(self.current_set)}"
@@ -227,7 +197,7 @@ class PracticeSet:
 
 
 class SimpleAudioVisualizerWithSAI:
-    """Audio learning system with recording and playback"""
+    """Audio learning system with recording and playback - WAV only"""
     
     def __init__(self, chunk_size=512, sample_rate=16000, save_dir="recordings", audio_ref_dir="reference"):
         self.chunk_size = chunk_size
@@ -270,14 +240,19 @@ class SimpleAudioVisualizerWithSAI:
             bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8)
         )
         
-        # Practice item display (centered and larger)
+        # Practice item display
         current_item = self.practice_set.get_current_item()
-        item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
+        if current_item:
+            item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
+        else:
+            item_text = "No WAV files found!\n\nRun MP3 to WAV converter first"
+        
         self.practice_text = self.ax_main.text(
             0.5, 0.5, item_text, transform=self.ax_main.transAxes,
-            color='cyan', fontsize=24, verticalalignment='center',
+            color='cyan' if current_item else 'red', fontsize=24, verticalalignment='center',
             horizontalalignment='center', weight='bold',
-            bbox=dict(boxstyle='round,pad=1.2', facecolor='black', alpha=0.9, edgecolor='cyan', linewidth=3)
+            bbox=dict(boxstyle='round,pad=1.2', facecolor='black', alpha=0.9, 
+                     edgecolor='cyan' if current_item else 'red', linewidth=3)
         )
         
         # Progress indicator
@@ -293,7 +268,7 @@ class SimpleAudioVisualizerWithSAI:
         from matplotlib.widgets import Button
         
         self.ax_play_button = plt.axes([0.15, 0.08, 0.10, 0.05])
-        self.play_button = Button(self.ax_play_button, '🔊 Play', 
+        self.play_button = Button(self.ax_play_button, 'Play Audio', 
                                   color='lightcyan', hovercolor='cyan')
         self.play_button.on_clicked(self.play_reference_audio)
         
@@ -321,22 +296,12 @@ class SimpleAudioVisualizerWithSAI:
         self.ax_main.set_facecolor('#16213e')
         plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.15)
     
-    def add_to_buffer(self, chunk):
-        """Add audio to buffer for recording"""
-        # Simplified - just for recording, no waveform display
-        pass
-    
-    def get_waveform(self):
-        """Not used - removed waveform display"""
-        return np.array([])
-    
     def audio_callback(self, in_data, frame_count, time_info, status):
         """Audio callback for recording"""
         try:
             if self.is_recording:
                 self.recorded_frames.append(in_data)
             
-            # Keep queue flowing
             audio_float = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
             try:
                 self.audio_queue.put_nowait(audio_float)
@@ -352,14 +317,11 @@ class SimpleAudioVisualizerWithSAI:
         return (in_data, pyaudio.paContinue)
     
     def process_audio(self):
-        """Process audio - recording only, no visualization"""
+        """Process audio - recording only"""
         print("Audio processing started (recording mode)")
         while self.running:
             try:
-                # Just drain the queue to keep it from filling up
                 audio_chunk = self.audio_queue.get(timeout=0.1)
-                # Audio is already being recorded in the callback
-                
             except queue.Empty:
                 continue
             except Exception as e:
@@ -367,7 +329,7 @@ class SimpleAudioVisualizerWithSAI:
                 continue
     
     def play_reference_audio(self, event=None):
-        """Play the reference audio for the current item"""
+        """Play the reference WAV audio for the current item"""
         if self.reference_audio_playing:
             self.status_text.set_text('Audio already playing...')
             return
@@ -380,30 +342,29 @@ class SimpleAudioVisualizerWithSAI:
         
         audio_path = self.practice_set.get_audio_path(current_item)
         if not audio_path or not audio_path.exists():
-            self.status_text.set_text(f'Audio file not found: {audio_path}')
-            self.status_text.set_color('orange')
-            print(f"Audio file not found: {audio_path}")
+            self.status_text.set_text(f'WAV file not found')
+            self.status_text.set_color('red')
+            print(f"ERROR: WAV file not found: {audio_path}")
             return
         
-        # Start playback in separate thread
         self.playback_thread = threading.Thread(
-            target=self._play_audio_file, 
+            target=self._play_audio_file_wav, 
             args=(audio_path,), 
             daemon=True
         )
         self.playback_thread.start()
     
-    def _play_audio_file(self, audio_path):
-        """Play an audio file using PyAudio"""
+    def _play_audio_file_wav(self, audio_path):
+        """Play a WAV file using PyAudio"""
         self.reference_audio_playing = True
-        self.status_text.set_text('🔊 Playing reference audio...')
+        self.status_text.set_text('Playing reference audio...')
         self.status_text.set_color('cyan')
         print(f"Playing: {audio_path}")
         
         try:
-            # Open the audio file
+            # Open WAV file
             with wave.open(str(audio_path), 'rb') as wf:
-                # Create a new PyAudio stream for playback
+                # Create playback stream
                 playback_stream = self.p.open(
                     format=self.p.get_format_from_width(wf.getsampwidth()),
                     channels=wf.getnchannels(),
@@ -411,7 +372,7 @@ class SimpleAudioVisualizerWithSAI:
                     output=True
                 )
                 
-                # Play the audio
+                # Play audio
                 chunk = 1024
                 data = wf.readframes(chunk)
                 while data and self.running:
@@ -422,19 +383,26 @@ class SimpleAudioVisualizerWithSAI:
                 playback_stream.stop_stream()
                 playback_stream.close()
                 
-            self.status_text.set_text('✓ Audio playback complete')
+            self.status_text.set_text('Audio playback complete')
             self.status_text.set_color('lime')
             print(f"Finished playing: {audio_path}")
             
         except Exception as e:
-            self.status_text.set_text(f'Error playing audio: {str(e)[:30]}')
+            self.status_text.set_text(f'Error playing audio')
             self.status_text.set_color('red')
-            print(f"Error playing audio: {e}")
+            print(f"ERROR playing audio: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.reference_audio_playing = False
     
     def next_practice_item(self, event=None):
         """Move to next practice item"""
+        if len(self.practice_set.all_items) == 0:
+            self.status_text.set_text('No audio files available!')
+            self.status_text.set_color('red')
+            return
+        
         next_item = self.practice_set.next_item()
         if next_item:
             item_text = f"[{next_item['type'].upper()}] {next_item['chinese']}\n{next_item['pinyin']}\n{next_item['english']}"
@@ -450,14 +418,20 @@ class SimpleAudioVisualizerWithSAI:
     
     def generate_new_set(self, event=None):
         """Generate a new random practice set"""
+        if len(self.practice_set.all_items) == 0:
+            self.status_text.set_text('No audio files available!')
+            self.status_text.set_color('red')
+            return
+        
         self.practice_set.generate_new_set()
         current_item = self.practice_set.get_current_item()
-        item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
-        self.practice_text.set_text(item_text)
-        progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
-        self.progress_text.set_text(progress_text)
-        self.status_text.set_text('New set generated!')
-        self.status_text.set_color('cyan')
+        if current_item:
+            item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
+            self.practice_text.set_text(item_text)
+            progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
+            self.progress_text.set_text(progress_text)
+            self.status_text.set_text('New set generated!')
+            self.status_text.set_color('cyan')
     
     def toggle_recording(self, event=None):
         """Toggle recording"""
@@ -481,26 +455,29 @@ class SimpleAudioVisualizerWithSAI:
             print(f"Recording stopped - {duration:.1f}s")
     
     def save_recording(self, event=None):
-        """Save recording to WAV file"""
+        """Save recording to WAV file with metadata TXT file"""
         if not self.recorded_frames:
             print("No recording to save")
             self.status_text.set_text('No recording to save')
             self.status_text.set_color('orange')
             return
         
-        # Get current item info for filename
         current_item = self.practice_set.get_current_item()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         if current_item:
             item_id = current_item.get('id', 'unknown')
             filename = f"recording_{item_id}_{timestamp}.wav"
+            txt_filename = f"recording_{item_id}_{timestamp}.txt"
         else:
             filename = f"recording_{timestamp}.wav"
+            txt_filename = f"recording_{timestamp}.txt"
         
         filepath = os.path.join(self.save_dir, filename)
+        txt_filepath = os.path.join(self.save_dir, txt_filename)
         
         try:
+            # Save WAV file
             with wave.open(filepath, 'wb') as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
@@ -508,8 +485,33 @@ class SimpleAudioVisualizerWithSAI:
                 wf.writeframes(b''.join(self.recorded_frames))
             
             duration = len(self.recorded_frames) * self.chunk_size / self.sample_rate
-            print(f"Saved: {filepath} ({duration:.1f}s)")
-            self.status_text.set_text(f'Saved: {filename}')
+            
+            # Save metadata TXT file
+            with open(txt_filepath, 'w', encoding='utf-8') as txt_file:
+                txt_file.write(f"Recording Metadata\n")
+                txt_file.write(f"=" * 50 + "\n\n")
+                txt_file.write(f"Timestamp: {timestamp}\n")
+                txt_file.write(f"Date/Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                txt_file.write(f"Duration: {duration:.2f} seconds\n")
+                txt_file.write(f"Sample Rate: {self.sample_rate} Hz\n")
+                txt_file.write(f"Audio File: {filename}\n\n")
+                
+                if current_item:
+                    txt_file.write(f"Practice Item Details\n")
+                    txt_file.write(f"-" * 50 + "\n")
+                    txt_file.write(f"Item ID: {current_item.get('id')}\n")
+                    txt_file.write(f"Type: {current_item.get('type').upper()}\n")
+                    txt_file.write(f"Chinese: {current_item.get('chinese')}\n")
+                    txt_file.write(f"Pinyin: {current_item.get('pinyin')}\n")
+                    txt_file.write(f"English: {current_item.get('english')}\n")
+                    txt_file.write(f"Reference Audio: {current_item.get('audio')}\n\n")
+                
+                txt_file.write(f"Practice Set: #{self.practice_set.set_number}\n")
+                txt_file.write(f"Progress: {self.practice_set.get_progress()}\n")
+            
+            print(f"Saved WAV: {filepath} ({duration:.1f}s)")
+            print(f"Saved TXT: {txt_filepath}")
+            self.status_text.set_text(f'Saved: {filename} + metadata')
             self.status_text.set_color('lime')
             self.recorded_frames = []
         except Exception as e:
@@ -520,7 +522,6 @@ class SimpleAudioVisualizerWithSAI:
     def update_visualization(self, frame):
         """Update visualization"""
         try:
-            # Simple refresh - no spectrogram to update
             return [self.status_text, self.practice_text, self.progress_text]
         except Exception as e:
             print(f"Visualization error: {e}")
@@ -528,10 +529,11 @@ class SimpleAudioVisualizerWithSAI:
     
     def start(self):
         """Start the learning system"""
-        print("Starting Chinese Audio Learning System...")
+        print("Starting Chinese Audio Learning System (WAV Mode)...")
         print(f"Total available items: {len(self.practice_set.all_items)}")
         print(f"Practice set composition: 3 words + 2 sentences (5 total)")
         print(f"Audio reference directory: {self.practice_set.audio_base_path}")
+        print("Audio format: WAV (no ffmpeg needed)")
         
         self.p = pyaudio.PyAudio()
         
@@ -553,8 +555,7 @@ class SimpleAudioVisualizerWithSAI:
         self.running = True
         threading.Thread(target=self.process_audio, daemon=True).start()
         
-        # Update less frequently since we don't have real-time visualization
-        animation_interval = 100  # 100ms
+        animation_interval = 100
         self.animation = animation.FuncAnimation(
             self.fig, self.update_visualization,
             interval=animation_interval, blit=False, cache_frame_data=False
@@ -581,11 +582,21 @@ class SimpleAudioVisualizerWithSAI:
 
 
 if __name__ == "__main__":
+    # Auto-detect the reference directory relative to the script location
+    script_dir = Path(__file__).parent  # Directory where this script is located
+    audio_ref_dir = script_dir / "reference"  # reference folder in same directory as script
+    
+    # Alternative: if reference is in a specific location relative to script
+    # audio_ref_dir = script_dir.parent / "carfac" / "reference"
+    
+    print(f"Script location: {script_dir}")
+    print(f"Looking for WAV files in: {audio_ref_dir}")
+    
     visualizer = SimpleAudioVisualizerWithSAI(
         chunk_size=512,
         sample_rate=16000,
         save_dir="recordings",
-        audio_ref_dir="reference"  # Directory containing men/women folders with MP3s
+        audio_ref_dir=str(audio_ref_dir)
     )
     
     try:

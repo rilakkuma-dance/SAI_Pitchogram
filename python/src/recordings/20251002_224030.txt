@@ -1,0 +1,9 @@
+Timestamp: 20251002_224030
+Recording: 20251002_224030.wav
+Item ID: 6
+Type: word
+Chinese: 喜欢
+Pinyin: xǐhuān
+English: to like
+Set Number: 1
+Item Position: 1/5

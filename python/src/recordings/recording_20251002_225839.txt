@@ -1,0 +1,8 @@
+Timestamp: 20251002_225839
+Recording: recording_20251002_225839.wav
+Duration: 2.24s
+Sample Rate: 16000 Hz
+
+--- Reference ---
+Pronunciation: xiè xiè
+Translation: thank you

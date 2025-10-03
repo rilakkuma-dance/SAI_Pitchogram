@@ -1,0 +1,20 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251002_220836
+Date/Time: 2025-10-02 22:08:36
+Duration: 1.76 seconds
+Sample Rate: 16000 Hz
+Audio File: recording_28_20251002_220836.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 28
+Type: SENTENCE
+Chinese: 他每天早上跑步。
+Pinyin: Tā měitiān zǎoshang pǎobù.
+English: He jogs every morning
+Reference Audio: women/28_women.wav
+
+Practice Set: #1
+Progress: Item 1 of 5

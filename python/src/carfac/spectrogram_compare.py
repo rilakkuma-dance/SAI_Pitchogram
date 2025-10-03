@@ -155,58 +155,56 @@ class PracticeSet:
         self.all_items = []
         self.audio_base_path = Path(audio_base_path)
 
-        # 15 words from the JSON
         words = [
-            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "audio": "women/1_women.mp3"},
-            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "audio": "women/2_women.mp3"},
-            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "audio": "women/3_women.mp3"},
-            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "audio": "women/4_women.mp3"},
-            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "audio": "women/6_women.mp3"},
-            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "audio": "women/7_women.mp3"},
-            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "audio": "men/8_men.mp3"},
-            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "audio": "women/9_women.mp3"},
-            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "audio": "men/10_men.mp3"},
-            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "audio": "women/11_women.mp3"},
-            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "audio": "men/12_men.mp3"},
-            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "audio": "women/13_women.mp3"},
-            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "audio": "men/14_men.mp3"},
-            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "audio": "women/15_women.mp3"},
-            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "audio": "men/16_men.mp3"},
+            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "audio": "men/1_men.wav"},
+            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "audio": "women/2_women.wav"},
+            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "audio": "men/3_men.wav"},
+            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "audio": "men/4_men.wav"},
+            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "audio": "women/6_women.wav"},
+            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "audio": "women/7_women.wav"},
+            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "audio": "men/8_men.wav"},
+            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "audio": "women/9_women.wav"},
+            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "audio": "men/10_men.wav"},
+            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "audio": "women/11_women.wav"},
+            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "audio": "men/12_men.wav"},
+            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "audio": "women/13_women.wav"},
+            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "audio": "men/14_men.wav"},
+            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "audio": "women/15_women.wav"},
+            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "audio": "men/16_men.wav"},
         ]
-
-        # 15 sentences from the JSON
-        # 15 sentences - FIX THESE PATHS
+        
+        # 15 sentences - WAV format
         sentences = [
-            {"type": "sentence", "id": 5, "chinese": "女人去买书",
-            "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_women.mp3"},  # Changed
-            {"type": "sentence", "id": 17, "chinese": "我喜欢吃苹果。",
-            "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_men.mp3"},  # Changed
-            {"type": "sentence", "id": 18, "chinese": "他去学校学习汉语。",
-            "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_women.mp3"},  # Changed
-            {"type": "sentence", "id": 19, "chinese": "熊猫在公园里玩。",
-            "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_men.mp3"},  # Changed
-            {"type": "sentence", "id": 20, "chinese": "街道上有很多人。",
-            "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_women.mp3"},  # Changed
-            {"type": "sentence", "id": 21, "chinese": "医院旁边有一家书店。",
-            "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_men.mp3"},  # Changed
-            {"type": "sentence", "id": 22, "chinese": "她是一个聪明的女人。",
-            "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_women.mp3"},  # Changed
-            {"type": "sentence", "id": 23, "chinese": "我每天中午吃午饭。",
-            "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_men.mp3"},  # Changed
-            {"type": "sentence", "id": 24, "chinese": "游戏很有趣。",
-            "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_women.mp3"},  # Changed
-            {"type": "sentence", "id": 25, "chinese": "请坐在椅子上。",
-            "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_men.mp3"},  # Changed
-            {"type": "sentence", "id": 26, "chinese": "我想去北京旅行。",
-            "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_women.mp3"},  # Changed
-            {"type": "sentence", "id": 27, "chinese": "学校的老师很好。",
-            "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_men.mp3"},  # Changed
-            {"type": "sentence", "id": 28, "chinese": "他每天早上跑步。",
-            "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_women.mp3"},  # Changed
-            {"type": "sentence", "id": 29, "chinese": "我在家里玩游戏。",
-            "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_men.mp3"},  # Changed
-            {"type": "sentence", "id": 30, "chinese": "她喜欢喝茶。",
-            "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_women.mp3"},  # Changed
+            {"type": "sentence", "id": 5, "chinese": "女人去买书", 
+             "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_women.wav"},
+            {"type": "sentence", "id": 17, "chinese": "我喜欢吃苹果。", 
+             "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_men.wav"},
+            {"type": "sentence", "id": 18, "chinese": "他去学校学习汉语。", 
+             "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_women.wav"},
+            {"type": "sentence", "id": 19, "chinese": "熊猫在公园里玩。", 
+             "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_men.wav"},
+            {"type": "sentence", "id": 20, "chinese": "街道上有很多人。", 
+             "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_women.wav"},
+            {"type": "sentence", "id": 21, "chinese": "医院旁边有一家书店。", 
+             "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_men.wav"},
+            {"type": "sentence", "id": 22, "chinese": "她是一个聪明的女人。", 
+             "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_women.wav"},
+            {"type": "sentence", "id": 23, "chinese": "我每天中午吃午饭。", 
+             "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_men.wav"},
+            {"type": "sentence", "id": 24, "chinese": "游戏很有趣。", 
+             "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_women.wav"},
+            {"type": "sentence", "id": 25, "chinese": "请坐在椅子上。", 
+             "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_men.wav"},
+            {"type": "sentence", "id": 26, "chinese": "我想去北京旅行。", 
+             "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_women.wav"},
+            {"type": "sentence", "id": 27, "chinese": "学校的老师很好。", 
+             "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_men.wav"},
+            {"type": "sentence", "id": 28, "chinese": "他每天早上跑步。", 
+             "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_women.wav"},
+            {"type": "sentence", "id": 29, "chinese": "我在家里玩游戏。", 
+             "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_men.wav"},
+            {"type": "sentence", "id": 30, "chinese": "她喜欢喝茶。", 
+             "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_women.wav"},
         ]
 
         self.all_items = words + sentences
@@ -215,22 +213,28 @@ class PracticeSet:
         self.set_number = 0
 
     def generate_new_set(self):
-        """Randomly select 3 words and 2 sentences from the available items"""
-        # Separate words and sentences
+        """Randomly select 3 words and 2 sentences - words first, then sentences"""
+        if len(self.all_items) == 0:
+            print("ERROR: No items available to create practice set!")
+            return []
+        
         words = [item for item in self.all_items if item['type'] == 'word']
         sentences = [item for item in self.all_items if item['type'] == 'sentence']
-
-        # Randomly select 3 words and 2 sentences
-        selected_words = random.sample(words, min(3, len(words)))
-        selected_sentences = random.sample(sentences, min(2, len(sentences)))
-
-        # Combine WITHOUT shuffling - words first, then sentences
-        self.current_set = selected_words + selected_sentences
-        # REMOVED: random.shuffle(self.current_set)
-
+        
+        num_words = min(3, len(words))
+        num_sentences = min(2, len(sentences))
+        
+        selected_words = random.sample(words, num_words) if num_words > 0 else []
+        selected_sentences = random.sample(sentences, num_sentences) if num_sentences > 0 else []
+        
+        # Shuffle words and sentences separately, then combine with words first
+        random.shuffle(selected_words)
+        random.shuffle(selected_sentences)
+        self.current_set = selected_words + selected_sentences  # Words first, then sentences
+        
         self.current_index = 0
         self.set_number += 1
-        print(f"\n=== Practice Set #{self.set_number} (3 Words + 2 Sentences) ===")
+        print(f"\n=== Practice Set #{self.set_number} ({num_words} Words + {num_sentences} Sentences) ===")
         for i, item in enumerate(self.current_set, 1):
             print(f"{i}. [{item['type'].upper()}] {item['chinese']} ({item['pinyin']}) - {item['english']}")
         return self.current_set
@@ -831,92 +835,82 @@ class SimpleAudioVisualizerWithSAI:
         if next_item:
             item_text = f"[{next_item['type'].upper()}] {next_item['chinese']}\n{next_item['pinyin']}\n{next_item['english']}"
             self.practice_text.set_text(item_text)
-            progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
-            self.progress_text.set_text(progress_text)
-            self.status_text.set_text('Loading next item...')
-            self.status_text.set_color('yellow')
-            print(f"\nNext item: {next_item['chinese']} ({next_item['pinyin']})")
-            
-            # Wait briefly for old audio to stop, then start new reference
-            threading.Timer(0.5, self.play_reference_audio).start()
+            self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
+            self.status_text.set_text('Ready - Click Play to hear reference')
+            self.status_text.set_color('lime')
         else:
-            self.status_text.set_text('Set completed! Generate new set')
+            self.status_text.set_text('✓ All items in current set completed')
             self.status_text.set_color('yellow')
+            print(f"Completed Set #{self.practice_set.set_number}")
+
 
     def generate_new_set(self, event=None):
-        """Generate a new random practice set"""
-        # Stop current reference audio
-        self.reference_audio_playing = False
-        
+        """Generate a completely new practice set"""
         self.practice_set.generate_new_set()
         current_item = self.practice_set.get_current_item()
         item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
         self.practice_text.set_text(item_text)
-        progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
-        self.progress_text.set_text(progress_text)
-        self.status_text.set_text('New set generated!')
-        self.status_text.set_color('cyan')
-        
-        # Start new reference audio after brief delay
-        threading.Timer(0.5, self.play_reference_audio).start()
+        self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
+        self.status_text.set_text('Ready - Click Play to hear reference')
+        self.status_text.set_color('lime')
+
 
     def toggle_recording(self, event=None):
-        """Toggle recording"""
+        """Start/Stop recording"""
         if not self.is_recording:
             self.recorded_frames = []
             self.is_recording = True
-            self.rec_button.label.set_text('Stop Recording')
-            self.rec_button.color = 'red'
-            self.rec_button.ax.set_facecolor('red')
-            self.status_text.set_text('Recording...')
+            self.status_text.set_text('● Recording...')
             self.status_text.set_color('red')
             print("Recording started")
         else:
             self.is_recording = False
-            self.rec_button.label.set_text('Start Recording')
-            self.rec_button.color = 'lightgreen'
-            self.rec_button.ax.set_facecolor('lightgreen')
-            duration = len(self.recorded_frames) * self.chunk_size / self.sample_rate
-            self.status_text.set_text(f'Stopped ({duration:.1f}s) - Click Save')
+            self.status_text.set_text('Recording stopped')
             self.status_text.set_color('yellow')
-            print(f"Recording stopped - {duration:.1f}s")
+            print("Recording stopped")
 
     def save_recording(self, event=None):
-        """Save recording to WAV file"""
+        """Save the recorded audio to a WAV file with metadata text file"""
         if not self.recorded_frames:
-            print("No recording to save")
             self.status_text.set_text('No recording to save')
             self.status_text.set_color('orange')
             return
 
-        # Get current item info for filename
+        # Get current practice item info
         current_item = self.practice_set.get_current_item()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Generate timestamp and filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{timestamp}.wav"
+        txt_filename = f"{timestamp}.txt"
+        
+        # Save WAV file
+        save_path = Path(self.save_dir) / filename
+        wf = wave.open(str(save_path), 'wb')
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(self.sample_rate)
+        wf.writeframes(b''.join(self.recorded_frames))
+        wf.close()
+        
+        # Save metadata text file
+        txt_path = Path(self.save_dir) / txt_filename
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(f"Timestamp: {timestamp}\n")
+            f.write(f"Recording: {filename}\n")
+            f.write(f"Item ID: {current_item['id']}\n")
+            f.write(f"Type: {current_item['type']}\n")
+            f.write(f"Chinese: {current_item['chinese']}\n")
+            f.write(f"Pinyin: {current_item['pinyin']}\n")
+            f.write(f"English: {current_item['english']}\n")
+            f.write(f"Set Number: {self.practice_set.set_number}\n")
+            f.write(f"Item Position: {self.practice_set.current_index + 1}/{len(self.practice_set.current_set)}\n")
+        
+        self.status_text.set_text(f'✓ Saved: {filename} + metadata')
+        self.status_text.set_color('lime')
+        print(f"Recording saved: {save_path}")
+        print(f"Metadata saved: {txt_path}")
 
-        if current_item:
-            item_id = current_item.get('id', 'unknown')
-            filename = f"recording_{item_id}_{timestamp}.wav"
-        else:
-            filename = f"recording_{timestamp}.wav"
-
-        filepath = os.path.join(self.save_dir, filename)
-
-        try:
-            with wave.open(filepath, 'wb') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
-                wf.setframerate(self.sample_rate)
-                wf.writeframes(b''.join(self.recorded_frames))
-
-            duration = len(self.recorded_frames) * self.chunk_size / self.sample_rate
-            print(f"Saved: {filepath} ({duration:.1f}s)")
-            self.status_text.set_text(f'Saved: {filename}')
-            self.status_text.set_color('lime')
-            self.recorded_frames = []
-        except Exception as e:
-            print(f"Error saving: {e}")
-            self.status_text.set_text('Error saving')
-            self.status_text.set_color('red')
 
     def update_visualization(self, frame):
         """Update visualization"""
@@ -997,7 +991,6 @@ class SimpleAudioVisualizerWithSAI:
 
         plt.close('all')
         print("Stopped")
-
 
 if __name__ == "__main__":
     visualizer = SimpleAudioVisualizerWithSAI(

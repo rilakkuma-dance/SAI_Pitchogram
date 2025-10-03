@@ -1,0 +1,20 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251002_220936
+Date/Time: 2025-10-02 22:09:36
+Duration: 2.56 seconds
+Sample Rate: 16000 Hz
+Audio File: recording_6_20251002_220936.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 6
+Type: WORD
+Chinese: 喜欢
+Pinyin: xǐhuān
+English: to like
+Reference Audio: women/6_women.wav
+
+Practice Set: #1
+Progress: Item 1 of 5
