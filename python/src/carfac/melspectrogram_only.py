@@ -10,7 +10,8 @@ import wave
 import os
 import random
 from datetime import datetime
-from pathlib import Path
+from scipy import signal
+from scipy.fft import fft
 import time
 from pathlib import Path
 
@@ -88,65 +89,52 @@ class SAIParams:
         self.input_segment_width = input_segment_width
         self.channel_smoothing_scale = channel_smoothing_scale
 
-class AudioProcessor:
-    """CARFAC audio processor"""
-    def __init__(self, fs=16000):
-        self.fs = fs
-        self.hypers, self.weights, self.state = carfac.design_and_init_carfac(
-            carfac.CarfacDesignParameters(fs=fs, n_ears=1)
-        )
-        self.n_channels = self.hypers.ears[0].car.n_ch
-        self.run_segment_jit = jax.jit(carfac.run_segment, static_argnames=['hypers', 'open_loop'])
-        print(f"CARFAC initialized with {self.n_channels} channels")
-
+class SpectrogramProcessor:
+    """Mel spectrogram processor using STFT"""
+    def __init__(self, sample_rate=16000, n_fft=512, hop_length=128, n_mels=128):
+        self.sample_rate = sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.n_mels = n_mels
+        self.window = signal.windows.hann(n_fft)
+        self.mel_basis = self._create_mel_filterbank()
+    
+    def _create_mel_filterbank(self):
+        def hz_to_mel(hz):
+            return 2595 * np.log10(1 + hz / 700)
+        def mel_to_hz(mel):
+            return 700 * (10**(mel / 2595) - 1)
+        
+        fmin, fmax = 0, self.sample_rate / 2
+        mel_min, mel_max = hz_to_mel(fmin), hz_to_mel(fmax)
+        mel_points = np.linspace(mel_min, mel_max, self.n_mels + 2)
+        hz_points = mel_to_hz(mel_points)
+        bin_points = np.floor((self.n_fft + 1) * hz_points / self.sample_rate).astype(int)
+        
+        filterbank = np.zeros((self.n_mels, self.n_fft // 2 + 1))
+        for i in range(self.n_mels):
+            left, center, right = bin_points[i:i+3]
+            for j in range(left, center):
+                filterbank[i, j] = (j - left) / (center - left)
+            for j in range(center, right):
+                filterbank[i, j] = (right - j) / (right - center)
+        return filterbank
+    
     def process_chunk(self, audio_chunk):
-        if len(audio_chunk.shape) == 1:
-            audio_input = audio_chunk.reshape(-1, 1)
-        else:
-            audio_input = audio_chunk
-        audio_jax = jnp.array(audio_input, dtype=jnp.float32)
-        naps, _, self.state, _, _, _ = self.run_segment_jit(
-            audio_jax, self.hypers, self.weights, self.state, open_loop=False
-        )
-        return np.array(naps[:, :, 0]).T
-
-class SAIProcessor:
-    """SAI processor"""
-    def __init__(self, sai_params):
-        self.sai_params = sai_params
-        self.sai = sai.SAI(sai_params)
-        print(f"SAI initialized: {sai_params.sai_width} width, {sai_params.num_channels} channels")
-
-    def RunSegment(self, nap_output):
-        return self.sai.RunSegment(nap_output)
+        if len(audio_chunk) < self.n_fft:
+            audio_chunk = np.pad(audio_chunk, (0, self.n_fft - len(audio_chunk)))
+        windowed = audio_chunk[-self.n_fft:] * self.window
+        spectrum = np.abs(fft(windowed)[:self.n_fft // 2 + 1])
+        spectrum = 20 * np.log10(spectrum + 1e-10)
+        spectrum = self.mel_basis @ spectrum
+        return spectrum
 
 class VisualizationHandler:
-    def __init__(self, sample_rate, sai_params):
-        self.sample_rate = sample_rate
-        self.sai_params = sai_params
-        self.img = np.zeros((sai_params.num_channels, sai_params.sai_width))
-        self.sai_frame = np.zeros((sai_params.num_channels, sai_params.sai_width))
-
-        # Reference audio SAI - CHANGE: Use list to store all columns
-        self.ref_sai_columns = []  # Store all reference columns
-        self.ref_img = np.zeros((sai_params.num_channels, sai_params.sai_width))
-        self.ref_sai_frame = np.zeros((sai_params.num_channels, sai_params.sai_width))
-
-    def run_frame(self, sai_output, is_reference=False):
-        if is_reference:
-            self.ref_sai_frame = sai_output
-        else:
-            self.sai_frame = sai_output
-
-    def draw_column(self, column, is_reference=False):
-        if is_reference:
-            for ch in range(min(self.sai_params.num_channels, len(self.ref_sai_frame))):
-                if ch < len(self.ref_sai_frame) and self.ref_sai_frame.shape[1] > 0:
-                    column[ch] = np.mean(self.ref_sai_frame[ch, :])
-        else:
-            for ch in range(min(self.sai_params.num_channels, len(self.sai_frame))):
-                if ch < len(self.sai_frame) and self.sai_frame.shape[1] > 0:
-                    column[ch] = np.mean(self.sai_frame[ch, :])
+    def __init__(self, n_freq_bins, spec_width):
+        self.n_freq_bins = n_freq_bins
+        self.spec_width = spec_width
+        self.img = np.zeros((n_freq_bins, spec_width))
+        self.ref_img = np.zeros((n_freq_bins, spec_width))
 
 class PracticeSet:
     """Manages practice sets - randomly selects 5 from 30 available items"""
@@ -299,26 +287,11 @@ class SimpleAudioVisualizerWithSAI:
         self.waveform_buffer = np.zeros(self.buffer_size)
         self.buffer_index = 0
 
-        # CARFAC and SAI setup (for live audio)
-        self.processor = AudioProcessor(fs=sample_rate)
-        self.n_channels = self.processor.n_channels
-
-        # Reference audio processor
-        self.ref_processor = AudioProcessor(fs=sample_rate)
-
-        self.sai_params = SAIParams(
-            num_channels=self.n_channels,
-            sai_width=self.sai_width,
-            future_lags=self.sai_width - 1,
-            num_triggers_per_frame=2,
-            trigger_window_width=self.chunk_size + 1,
-            input_segment_width=self.chunk_size,
-            channel_smoothing_scale=0.5
-        )
-
-        self.sai_processor = SAIProcessor(self.sai_params)
-        self.ref_sai_processor = SAIProcessor(self.sai_params)
-        self.vis = VisualizationHandler(sample_rate, self.sai_params)
+        # Replace lines 256-278 with:
+        self.processor = SpectrogramProcessor(sample_rate=sample_rate, n_fft=512, hop_length=128, n_mels=128)
+        self.ref_processor = SpectrogramProcessor(sample_rate=sample_rate, n_fft=512, hop_length=128, n_mels=128)
+        self.n_channels = self.processor.n_mels
+        self.vis = VisualizationHandler(self.n_channels, sai_width)
 
         # PyAudio
         self.p = None
@@ -331,27 +304,31 @@ class SimpleAudioVisualizerWithSAI:
         self.fig = plt.figure(figsize=(16, 10))
         gs = self.fig.add_gridspec(3, 2, height_ratios=[7, 2, 0.3], width_ratios=[1, 1])
 
-        # Left SAI display (Reference Audio)
-        self.ax_ref_sai = self.fig.add_subplot(gs[0, 0])
+        # Left SAI display (Your Audio) - SWAPPED
+        self.ax_sai = self.fig.add_subplot(gs[0, 0])
+        self.im_sai = self.ax_sai.imshow(
+            self.vis.img, aspect='auto', origin='lower',
+            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            cmap='magma', vmin=-80, vmax=0
+        )
+        self.ax_sai.set_title('Your Audio (Live/Recording)', color='lime', fontsize=13, weight='bold')
+        self.ax_sai.axis('off')
+        self.ax_sai.set_ylabel('Frequency Channels', color='white', fontsize=10)
+        self.ax_sai.tick_params(colors='white')
+
+        # Right SAI display (Reference Audio) - SWAPPED
+        self.ax_ref_sai = self.fig.add_subplot(gs[0, 1])
         self.im_ref_sai = self.ax_ref_sai.imshow(
-            self.vis.ref_img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='viridis'
+            self.vis.ref_img, aspect='auto', origin='lower',
+            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            cmap='magma', vmin=-80, vmax=0
         )
         self.ax_ref_sai.set_title('Reference Audio (Native Speaker)', color='cyan', fontsize=13, weight='bold')
         self.ax_ref_sai.set_ylabel('Frequency Channels', color='white', fontsize=10)
         self.ax_ref_sai.tick_params(colors='white')
-
-        # Right SAI display (Your Audio)
-        self.ax_sai = self.fig.add_subplot(gs[0, 1])
-        self.im_sai = self.ax_sai.imshow(
-            self.vis.img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='viridis'
-        )
-        self.ax_sai.set_title('Your Audio (Live/Recording)', color='lime', fontsize=13, weight='bold')
-        self.ax_sai.set_ylabel('Frequency Channels', color='white', fontsize=10)
-        self.ax_sai.tick_params(colors='white')
+        self.ax_ref_sai.axis('off')
+        
+        # ... rest of the method stays the same
 
         # Practice item display (spans both columns)
         self.ax_practice = self.fig.add_subplot(gs[1, :])
@@ -468,72 +445,38 @@ class SimpleAudioVisualizerWithSAI:
         return (in_data, pyaudio.paContinue)
 
     def process_audio(self):
-        """Process audio with CARFAC and SAI for live audio"""
-        print("SAI processing started")
+        print("Spectrogram processing started")
         while self.running:
             try:
                 audio_chunk = self.audio_queue.get(timeout=0.1)
-
-                # CARFAC processing
-                nap_output = self.processor.process_chunk(audio_chunk)
-
-                # SAI processing
-                sai_output = self.sai_processor.RunSegment(nap_output)
-                self.vis.run_frame(sai_output, is_reference=False)
-
-                # Update visualization
-                self.vis.img[:, :-1] = self.vis.img[:, 1:]
-                self.vis.draw_column(self.vis.img[:, -1], is_reference=False)
-
+                spec_column = self.processor.process_chunk(audio_chunk)
+                self.vis.img[:, 1:] = self.vis.img[:, :-1]
+                self.vis.img[:, 0] = spec_column
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Processing error: {e}")
-                continue
 
     def process_reference_audio(self):
-        """Process reference audio with CARFAC and SAI - scrolling right to left"""
-        print("Reference SAI processing started")
-        
-        # Clear previous reference data
-        self.vis.ref_img = np.zeros((self.vis.sai_params.num_channels, self.vis.sai_params.sai_width))
-        
-        # Buffer to accumulate audio chunks to exact size
+        print("Reference spectrogram processing started")
+        self.vis.ref_img = np.zeros((self.n_channels, self.sai_width))
         audio_buffer = np.array([], dtype=np.float32)
         
         while self.running and self.reference_audio_playing:
             try:
                 audio_chunk = self.ref_audio_queue.get(timeout=0.1)
-                
-                # Accumulate audio in buffer
                 audio_buffer = np.concatenate([audio_buffer, audio_chunk])
                 
-                # Process only when we have enough samples
                 while len(audio_buffer) >= self.chunk_size:
-                    # Extract exactly chunk_size samples
                     chunk_to_process = audio_buffer[:self.chunk_size]
                     audio_buffer = audio_buffer[self.chunk_size:]
-                    
-                    # CARFAC processing
-                    nap_output = self.ref_processor.process_chunk(chunk_to_process)
-                    
-                    # SAI processing
-                    sai_output = self.ref_sai_processor.RunSegment(nap_output)
-                    self.vis.run_frame(sai_output, is_reference=True)
-                    
-                    # Scroll right to left (same as live audio)
-                    self.vis.ref_img[:, :-1] = self.vis.ref_img[:, 1:]
-                    self.vis.draw_column(self.vis.ref_img[:, -1], is_reference=True)
-                
+                    spec_column = self.ref_processor.process_chunk(chunk_to_process)
+                    self.vis.ref_img[:, 1:] = self.vis.ref_img[:, :-1]
+                    self.vis.ref_img[:, 0] = spec_column
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"Reference processing error: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-        
-        print(f"Reference playback complete")
 
     def play_reference_audio(self, event=None):
         """Play the reference audio for the current item (with looping)"""
@@ -821,7 +764,7 @@ class SimpleAudioVisualizerWithSAI:
 
     def clear_reference(self, event=None):
         """Clear the reference SAI display"""
-        self.vis.ref_img = np.zeros((self.vis.sai_params.num_channels, self.vis.sai_params.sai_width))
+        self.vis.ref_img = np.zeros((self.n_channels, self.sai_width))
         self.status_text.set_text('Reference cleared')
         self.status_text.set_color('yellow')
         print("Reference SAI cleared")
@@ -830,6 +773,7 @@ class SimpleAudioVisualizerWithSAI:
         """Move to next practice item"""
         # Stop current reference audio
         self.reference_audio_playing = False
+        time.sleep(0.1)  # Brief pause
         
         next_item = self.practice_set.next_item()
         if next_item:
@@ -838,6 +782,9 @@ class SimpleAudioVisualizerWithSAI:
             self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
             self.status_text.set_text('Ready - Click Play to hear reference')
             self.status_text.set_color('lime')
+            
+            # Auto-play the new reference audio
+            threading.Timer(0.3, self.play_reference_audio).start()
         else:
             self.status_text.set_text('✓ All items in current set completed')
             self.status_text.set_color('yellow')
@@ -846,6 +793,9 @@ class SimpleAudioVisualizerWithSAI:
 
     def generate_new_set(self, event=None):
         """Generate a completely new practice set"""
+        self.reference_audio_playing = False
+        time.sleep(0.1)  # Brief pause
+        
         self.practice_set.generate_new_set()
         current_item = self.practice_set.get_current_item()
         item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
@@ -853,6 +803,9 @@ class SimpleAudioVisualizerWithSAI:
         self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
         self.status_text.set_text('Ready - Click Play to hear reference')
         self.status_text.set_color('lime')
+        
+        # Auto-play the new reference audio
+        threading.Timer(0.3, self.play_reference_audio).start()
 
 
     def toggle_recording(self, event=None):
@@ -913,18 +866,9 @@ class SimpleAudioVisualizerWithSAI:
 
 
     def update_visualization(self, frame):
-        """Update visualization"""
         try:
-            # Reference uses static/full display
-            ref_max = np.percentile(self.vis.ref_img, 95) if self.vis.ref_img.size > 0 else 1
             self.im_ref_sai.set_data(self.vis.ref_img)
-            self.im_ref_sai.set_clim(vmin=0, vmax=max(1, ref_max * 1.3))
-            
-            # Live audio continues scrolling
-            live_max = np.max(self.vis.img) if self.vis.img.size > 0 else 1
             self.im_sai.set_data(self.vis.img)
-            self.im_sai.set_clim(vmin=0, vmax=max(1, min(255, live_max * 1.3)))
-            
             return [self.im_ref_sai, self.im_sai, self.status_text, self.practice_text, self.progress_text]
         except Exception as e:
             print(f"Visualization error: {e}")
