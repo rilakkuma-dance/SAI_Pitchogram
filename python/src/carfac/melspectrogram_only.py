@@ -363,8 +363,9 @@ class SimpleAudioVisualizerWithSAI:
         from matplotlib.widgets import Button
 
         self.ax_play_button = plt.axes([0.15, 0.02, 0.08, 0.03])
-        self.play_button = Button(self.ax_play_button, '🔊 Play Ref',
-                                  color='lightcyan', hovercolor='cyan')
+        self.play_button = Button(self.ax_play_button, 'Play Ref',
+                                color='lightcyan', hovercolor='cyan')
+        self.play_button.label.set_text('Play')  # Shorter initial text
         self.play_button.on_clicked(self.play_reference_audio)
 
         self.ax_rec_button = plt.axes([0.25, 0.02, 0.10, 0.03])
@@ -479,9 +480,16 @@ class SimpleAudioVisualizerWithSAI:
                 print(f"Reference processing error: {e}")
 
     def play_reference_audio(self, event=None):
-        """Play the reference audio for the current item (with looping)"""
+        """Toggle reference audio playback only (visualization continues)"""
         if self.reference_audio_playing:
-            self.status_text.set_text('Audio already playing...')
+            # Stop audio playback only
+            self.reference_audio_playing = False
+            self.play_button.label.set_text('Play')
+            self.status_text.set_text('Audio paused (visualization active)')
+            self.status_text.set_color('yellow')
+            # Wait for playback thread to finish
+            if self.playback_thread and self.playback_thread.is_alive():
+                self.playback_thread.join(timeout=1.0)
             return
 
         current_item = self.practice_set.get_current_item()
@@ -497,7 +505,7 @@ class SimpleAudioVisualizerWithSAI:
             print(f"Audio file not found: {audio_path}")
             return
 
-        # Start playback in separate thread with looping
+        # Start playback thread
         self.playback_thread = threading.Thread(
             target=self._play_audio_file_loop,
             args=(audio_path,),
@@ -505,18 +513,41 @@ class SimpleAudioVisualizerWithSAI:
         )
         self.playback_thread.start()
 
+    def process_reference_audio(self):
+        """Process reference audio continuously - keeps visualization alive"""
+        print("Reference spectrogram processing started")
+        self.vis.ref_img = np.zeros((self.n_channels, self.sai_width))
+        audio_buffer = np.array([], dtype=np.float32)
+        
+        while self.running:  # Changed: continues while app is running, not tied to audio playback
+            try:
+                audio_chunk = self.ref_audio_queue.get(timeout=0.1)
+                audio_buffer = np.concatenate([audio_buffer, audio_chunk])
+                
+                while len(audio_buffer) >= self.chunk_size:
+                    chunk_to_process = audio_buffer[:self.chunk_size]
+                    audio_buffer = audio_buffer[self.chunk_size:]
+                    spec_column = self.ref_processor.process_chunk(chunk_to_process)
+                    self.vis.ref_img[:, 1:] = self.vis.ref_img[:, :-1]
+                    self.vis.ref_img[:, 0] = spec_column
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Reference processing error: {e}")
+
     def _play_audio_file_loop(self, audio_path: Path):
-        """Play an audio file on loop"""
+        """Play audio file on loop - feeds visualization queue"""
         if not self.p:
             print("PyAudio not initialized.")
             return
 
         self.reference_audio_playing = True
-        self.status_text.set_text('🔊 Playing reference (looping)...')
+        self.play_button.label.set_text('Stop')
+        self.status_text.set_text('Playing reference (looping)...')
         self.status_text.set_color('cyan')
         print(f"Playing (loop): {audio_path}")
 
-        # Start reference processing thread if not already
+        # Ensure reference processing thread is running
         if self.ref_processor_thread is None or not self.ref_processor_thread.is_alive():
             self.ref_processor_thread = threading.Thread(target=self.process_reference_audio, daemon=True)
             self.ref_processor_thread.start()
@@ -557,11 +588,10 @@ class SimpleAudioVisualizerWithSAI:
             bytes_per_frame = sampwidth * channels
             frames_per_chunk = self.chunk_size
 
-            # Loop indefinitely until stopped
+            # Loop while audio is active
             while self.running and self.reference_audio_playing:
                 offset = 0
                 
-                # Play through the entire audio file
                 while offset < len(audio_data) and self.running and self.reference_audio_playing:
                     chunk_bytes = audio_data[offset: offset + frames_per_chunk * bytes_per_frame]
                     if not chunk_bytes:
@@ -569,13 +599,12 @@ class SimpleAudioVisualizerWithSAI:
                         
                     playback_stream.write(chunk_bytes)
                     
-                    # Process for visualization
+                    # Feed visualization queue
                     audio_np = np.frombuffer(chunk_bytes, dtype=np.int16)
                     if channels > 1:
                         audio_np = audio_np.reshape(-1, channels).mean(axis=1)
                     audio_float = audio_np.astype(np.float32) / 32768.0
                     
-                    # Resample if needed
                     if framerate != self.sample_rate:
                         num_target = int(len(audio_float) * (self.sample_rate / framerate))
                         if num_target > 0:
@@ -595,15 +624,15 @@ class SimpleAudioVisualizerWithSAI:
                             pass
                     
                     offset += len(chunk_bytes)
-                
-                # Loop restarts here automatically
 
             playback_stream.stop_stream()
             playback_stream.close()
             
-            self.status_text.set_text('Reference stopped')
-            self.status_text.set_color('yellow')
-            print(f"Stopped looping: {audio_path}")
+            if not self.reference_audio_playing:
+                self.status_text.set_text('Audio paused (visualization active)')
+                self.status_text.set_color('yellow')
+            
+            print(f"Audio stopped: {audio_path}")
 
         except Exception as e:
             err_msg = str(e)
@@ -614,6 +643,7 @@ class SimpleAudioVisualizerWithSAI:
             print(f"Error playing audio: {e}")
         finally:
             self.reference_audio_playing = False
+            self.play_button.label.set_text('🔊 Play')
 
     def _play_audio_file(self, audio_path: Path):
         """Play an audio file (wav or other formats via pydub) and feed frames into ref queue"""
