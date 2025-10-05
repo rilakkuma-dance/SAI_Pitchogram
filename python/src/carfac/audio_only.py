@@ -467,11 +467,11 @@ class SimpleAudioVisualizerWithSAI:
         
         if current_item:
             item_id = current_item.get('id', 'unknown')
-            filename = f"recording_{item_id}_{timestamp}.wav"
-            txt_filename = f"recording_{item_id}_{timestamp}.txt"
+            filename = f"audio_{item_id}_{timestamp}.wav"
+            txt_filename = f"audio_{item_id}_{timestamp}.txt"
         else:
-            filename = f"recording_{timestamp}.wav"
-            txt_filename = f"recording_{timestamp}.txt"
+            filename = f"audio_{timestamp}.wav"
+            txt_filename = f"audio_{timestamp}.txt"
         
         filepath = os.path.join(self.save_dir, filename)
         txt_filepath = os.path.join(self.save_dir, txt_filename)

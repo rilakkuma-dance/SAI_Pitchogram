@@ -291,19 +291,12 @@ class SimpleWav2Vec2Handler:
                 self.recognizer = sr.Recognizer()
                 with self.microphone:
                     self.recognizer.adjust_for_ambient_noise(self.microphone)
-                print("🎤 Microphone ready for Wav2Vec2")
+                print("🎤 Microphone ready")
             except Exception as e:
                 print(f"⚠️ Microphone initialization warning: {e}. Disabling Wav2Vec2.")
                 self.microphone = None
                 self.recognizer = None
                 self.enabled = False
-
-            # Load model immediately
-            if self.enabled and not self.load_model():
-                print("❌ Failed to load Wav2Vec2 phoneme model. Handler disabled.")
-                self.enabled = False
-        else:
-            print("⚠️ Wav2Vec2 disabled (missing dependencies)")
 
     def load_model(self):
         try:
@@ -631,6 +624,8 @@ class SAIVisualizationWithWav2Vec2:
         # Simple local audio recorder (uses the imported module)
         self.is_recording_simple = False
         self.recorder = AudioRecorder(sample_rate=self.sample_rate)
+
+        self.recorder.add_audio_callback(self._save_recording_with_metadata)
 
         self._setup_dual_visualization()
 
@@ -1032,8 +1027,8 @@ class SAIVisualizationWithWav2Vec2:
             
             # Generate timestamp and filenames
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            wav_filename = f"{timestamp}.wav"
-            txt_filename = f"{timestamp}.txt"
+            wav_filename = f"sai_{timestamp}.wav"
+            txt_filename = f"sai_{timestamp}.txt"
             
             wav_path = save_dir / wav_filename
             txt_path = save_dir / txt_filename
@@ -1087,6 +1082,9 @@ class SAIVisualizationWithWav2Vec2:
                 self.status_text.set_text(f'✅ Saved: {wav_filename}')
                 self.status_text.set_color('lime')
                 self.fig.canvas.draw_idle()
+
+            duration = len(audio_int16) / self.sample_rate
+            print(f"Recording stopped - captured {duration:.1f} seconds.")
             
         except Exception as e:
             print(f"❌ Error saving recording: {e}")
@@ -1250,15 +1248,7 @@ class SAIVisualizationWithWav2Vec2:
             self.btn_record.label.set_text('Start Record')
             self.btn_record.color = 'lightcoral'
             self.btn_record.ax.set_facecolor('lightcoral')
-            audio = self.recorder.stop_recording()
-            
-            # Handle None or empty audio - create silent audio if needed
-            if audio is None:
-                print("⚠️ No audio object returned, creating empty audio")
-                audio = np.zeros(int(self.sample_rate * 0.5), dtype=np.float32)  # 0.5 seconds of silence
-            elif len(audio) == 0:
-                print("⚠️ Empty audio captured, creating silent audio")
-                audio = np.zeros(int(self.sample_rate * 0.5), dtype=np.float32)
+            self.recorder.stop_recording()
             
             # Update status immediately
             self.transcription_realtime.set_text("Processing...")
@@ -1269,24 +1259,6 @@ class SAIVisualizationWithWav2Vec2:
                 self.status_text.set_color('orange')
             
             self.fig.canvas.draw_idle()
-            
-            duration = len(audio) / self.sample_rate
-            print(f"Recording stopped - captured {duration:.1f} seconds.")
-            
-            # ALWAYS save recording, even if silent
-            self._save_recording_with_metadata(audio)
-            
-            # Only process with Wav2Vec2 if there's actual audio content
-            if np.max(np.abs(audio)) > 0.001:  # Check if there's actual sound
-                self.wav2vec2_handler.process_audio_buffer(audio, self.target_phonemes)
-            else:
-                print("Silent audio detected - skipping Wav2Vec2 processing")
-                self.transcription_realtime.set_text("No audio detected (silent)")
-                self.transcription_realtime.set_color("gray")
-                if hasattr(self, 'status_text'):
-                    self.status_text.set_text('Recording saved (silent)')
-                    self.status_text.set_color('yellow')
-
 
     def next_item(self, event=None):
         """Move to next practice item"""

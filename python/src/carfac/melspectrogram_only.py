@@ -864,8 +864,8 @@ class SimpleAudioVisualizerWithSAI:
         
         # Generate timestamp and filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{timestamp}.wav"
-        txt_filename = f"{timestamp}.txt"
+        filename = f"mel_{timestamp}.wav"
+        txt_filename = f"mel_{timestamp}.txt"
         
         # Save WAV file
         save_path = Path(self.save_dir) / filename
