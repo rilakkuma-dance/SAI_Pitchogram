@@ -35,7 +35,7 @@ class ToneClassifierTester:
         print(f"Number of classes: {self.num_classes}")
         print(f"Syllable vocabulary size: {len(self.syllable_to_idx)}")
     
-    def extract_mel_spectrogram(self, audio_input):
+    def extract_mel_spectrogram(self, audio_input, original_sr=22050):
         """Extract mel-spectrogram using the same method as training
         
         Args:
@@ -56,15 +56,18 @@ class ToneClassifierTester:
                 if y.ndim > 1:
                     y = y[0]  # Take first channel
                 
-                sr = 22050  # Assume 22050 Hz and resample if needed
-                y = librosa.resample(y, orig_sr=len(y)//3 if len(y) > 66150 else 22050, target_sr=22050)
+                sr = 22050
+                y = librosa.resample(y, orig_sr=original_sr, target_sr=sr)
                 
                 # Limit to 3 seconds
                 if len(y) > 22050 * 3:
                     y = y[:22050 * 3]
             
-            if len(y) < 0.5 * sr:
-                return None
+            if len(y) < int(0.5 * sr):
+                # Pad with silence to ensure a minimum duration of 0.5 seconds
+                pad_len = int(0.5 * sr) - len(y)
+                if pad_len > 0:
+                    y = np.pad(y, (0, pad_len), mode='constant')
             
             # Trim and normalize
             y, _ = librosa.effects.trim(y, top_db=20)
@@ -86,7 +89,7 @@ class ToneClassifierTester:
             return log_mel_spec.T
             
         except Exception as e:
-            print(f"Error extracting features from {audio_path}: {e}")
+            print(f"Error extracting features from input: {e}")
             return None
     
     def create_tri_tone_segments(self, mel_spec, syllable_info):
@@ -215,7 +218,7 @@ class ToneClassifierTester:
         
         return processed_samples
     
-    def predict_tone(self, audio_input, syllable_text="unknown"):
+    def predict_tone(self, audio_input, syllable_text="unknown", sr=None):
         """Predict tone for audio input
         
         Args:
@@ -223,7 +226,7 @@ class ToneClassifierTester:
             syllable_text: str
         """
         # Extract features
-        mel_spec = self.extract_mel_spectrogram(audio_input)
+        mel_spec = self.extract_mel_spectrogram(audio_input, sr)
         if mel_spec is None:
             return None
         
