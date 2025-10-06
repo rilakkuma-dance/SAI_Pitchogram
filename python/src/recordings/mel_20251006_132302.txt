@@ -1,0 +1,9 @@
+Timestamp: 20251006_132302
+Recording: mel_20251006_132302.wav
+Item ID: 11
+Type: word
+Chinese: 中午
+Pinyin: zhōngwǔ
+English: noon
+Set Number: 1
+Item Position: 2/5

@@ -1,0 +1,20 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251006_132540
+Date/Time: 2025-10-06 13:25:40
+Duration: 3.62 seconds
+Sample Rate: 16000 Hz
+Audio File: audio_20_20251006_132540.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 20
+Type: SENTENCE
+Chinese: 街道上有很多人。
+Pinyin: Jiēdào shàng yǒu hěnduō rén.
+English: There are many people on the street
+Reference Audio: women/20_women.wav
+
+Practice Set: #1
+Progress: Item 4 of 5

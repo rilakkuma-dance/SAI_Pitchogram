@@ -354,7 +354,7 @@ class Wav2Vec2PypinyinToneClassifier:
         return "\n".join(output)
 
 def main():
-    """Test the system with audio file auto-detection"""
+    """Test the system with audio file auto-detection - loops until user stops"""
     
     if not PYPINYIN_AVAILABLE:
         print("Please install pypinyin first:")
@@ -372,19 +372,38 @@ def main():
         print(f"Failed to initialize classifier: {e}")
         return
     
-    # Process audio file
-    audio_path = input("Enter audio file path: ").strip()
-    
-    if not os.path.exists(audio_path):
-        print("Audio file not found")
-        return
-    
-    results = classifier.predict_tone(audio_path, show_alternatives=True)
-    
-    if results:
-        print("\n" + classifier.format_results(results))
-    else:
-        print("No results obtained")
+    # Loop until user wants to stop
+    while True:
+        print("\n" + "=" * 60)
+        audio_path = input("Enter audio file path (or 'quit'/'exit'/'stop' to end): ").strip()
+        
+        # Check if user wants to quit
+        if audio_path.lower() in ['quit', 'exit', 'stop', 'q']:
+            print("Stopping the program. Goodbye!")
+            break
+        
+        # Skip empty input
+        if not audio_path:
+            print("No file path entered. Please try again.")
+            continue
+        
+        # Check if file exists
+        if not os.path.exists(audio_path):
+            print(f"Audio file not found: {audio_path}")
+            print("Please check the path and try again.")
+            continue
+        
+        # Process the audio file
+        try:
+            results = classifier.predict_tone(audio_path, show_alternatives=True)
+            
+            if results:
+                print("\n" + classifier.format_results(results))
+            else:
+                print("No results obtained")
+        except Exception as e:
+            print(f"Error processing file: {e}")
+            print("Please try another file.")
 
 if __name__ == "__main__":
     main()
