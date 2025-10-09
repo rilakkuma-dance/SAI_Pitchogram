@@ -1360,7 +1360,7 @@ if __name__ == "__main__":
         # Get the script's directory (src)
         script_dir = os.path.dirname(os.path.abspath(__file__))
         # Audio file is in reference subdirectory
-        default_audio = os.path.join(script_dir, 'reference', 'mandarin_thankyou.mp3')
+        default_audio = os.path.join(script_dir, 'reference', 'a4_FV1_MP3.mp3')
         
         if os.path.exists(default_audio):
             sys.argv.append('--audio-file')

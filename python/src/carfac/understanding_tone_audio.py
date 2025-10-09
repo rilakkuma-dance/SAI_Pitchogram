@@ -108,9 +108,6 @@ class ToneIntroductionQuiz:
         viz_ax.set_ylim(0, 4)
         viz_ax.axis('off')
         
-        # Draw tone contours
-        self._draw_tone_contours(viz_ax)
-        
         # Progress counter (top right) - moved to where timer was
         self.progress_text = main_ax.text(0.5, 1.00, '', 
                     fontsize=12, ha='center', va='top', weight='bold',
@@ -163,39 +160,6 @@ class ToneIntroductionQuiz:
         # Update progress counter
         self._update_progress()
         
-    def _draw_tone_contours(self, ax):
-        """Draw the 4 tone patterns with Tone 1 higher and Tone 4 lower"""
-        
-        # Define tones with adjusted vertical positions
-        tones = [
-            {'number': 1, 'name': 'high', 'color': '#E53935', 
-            'path': [(0.2, 3.0), (0.8, 3.0)]},  # Tone 1: HIGH - moved up
-            
-            {'number': 2, 'name': 'rising', 'color': '#FFA726', 
-            'path': [(0.2, 0.70), (0.8, 2.50)]},  # Tone 2: rising
-            
-            {'number': 3, 'name': 'low', 'color': '#7CB342', 
-            'path': [(0.2, 0.10), (0.8, 0.10)]},  # Tone 3: low flat
-            
-            {'number': 4, 'name': 'falling', 'color': '#5C6BC0', 
-            'path': [(0.2, 2.50), (0.8, 0.4)]},  # Tone 4: FALLING - ends much lower
-        ]
-        
-        # Draw each tone
-        for tone in tones:
-            path = tone['path']
-            x_coords = [p[0] for p in path]
-            y_coords = [p[1] for p in path]
-            
-            # Draw the line
-            ax.plot(x_coords, y_coords, color=tone['color'], 
-                    linewidth=8, solid_capstyle='round', alpha=0.9)
-            
-            # Add tone number label on the left
-            label_y = y_coords[0]  # Use starting position for label
-            ax.text(0.08, label_y, str(tone['number']), 
-                    fontsize=14, weight='bold', va='center', ha='center')
-    
     def _update_progress(self):
         """Update the progress counter"""
         self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
