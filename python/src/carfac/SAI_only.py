@@ -16,6 +16,7 @@ from datetime import datetime
 import speech_recognition as sr
 import json
 import time
+import traceback
 
 try:
     sys.path.append('./jax')
@@ -62,6 +63,9 @@ from modules.phoneme_handler import PhonemeAnalyzer
 
 # ---------------- Audio Recorder ----------------
 from modules.recorder import AudioRecorder
+
+# Tone Grader
+from modules.tone_grader_word import ToneGraderWord, GradingResult
 
 # Load vocabulary database
 def load_mandarin_vocab(filename='mandarin_vocab.json'):
@@ -236,7 +240,6 @@ else:
 try:
     import torch
     import torchaudio
-    from transformers import Wav2Vec2ForCTC, Wav2Vec2FeatureExtractor, Wav2Vec2CTCTokenizer
     WAV2VEC2_AVAILABLE = True
 except ImportError:
     # print("Warning: torch/transformers not found. Install with: pip install torch torchaudio transformers")
@@ -298,6 +301,7 @@ class SimpleWav2Vec2Handler:
                 self.recognizer = None
                 self.enabled = False
 
+    """
     def load_model(self):
         try:
             print(f"Loading Wav2Vec2 {self.model_name}...")
@@ -310,6 +314,7 @@ class SimpleWav2Vec2Handler:
         except Exception as e:
             # print(f"Error loading model: {e}")
             return False
+    """
 
     def get_current_status(self):
         """Simple 3-state status"""
@@ -625,7 +630,11 @@ class SAIVisualizationWithWav2Vec2:
         self.is_recording_simple = False
         self.recorder = AudioRecorder(sample_rate=self.sample_rate)
 
-        self.recorder.add_audio_callback(self._save_recording_with_metadata)
+        # Tone grader (for words)
+        self.grader = ToneGraderWord()
+
+        # self.recorder.add_audio_callback(self._save_recording_with_metadata)
+        self.recorder.add_audio_callback(self._grade_recording)
 
         self._setup_dual_visualization()
 
@@ -1088,8 +1097,33 @@ class SAIVisualizationWithWav2Vec2:
             
         except Exception as e:
             print(f"❌ Error saving recording: {e}")
-            import traceback
             traceback.print_exc()
+    
+    def _grade_recording(self, audio_data):
+        """Grade the recorded audio if it's a word"""
+        current_item = self.practice_session.get_current_item()
+        chinese = current_item.get('chinese', None)
+        pinyin = current_item.get('pinyin', None)
+        english = current_item.get('english', None)
+        tones = current_item.get('tone', None)
+
+        if type(tones) == list:
+            tones = tones[0]
+
+        print(audio_data, current_item)
+
+        self.grader.grade_audio(audio_data, chinese, pinyin, english, tones)
+
+        # Create recordings directory if it doesn't exist
+        save_dir = Path("recordings")
+        save_dir.mkdir(exist_ok=True)
+            
+        # Generate timestamp and filenames
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        txt_filename = f"sai_{timestamp}.txt"
+
+        self.grader.save_results(save_dir / txt_filename)
+
 
     def start(self):
         """Start the SAI visualization and main loop"""
@@ -1369,21 +1403,21 @@ class VocabList:
         
         # 15 words - WAV format
         words = [
-            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "phonemes": "ʂu", "audio": "men/1_men.wav"},
-            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "phonemes": "ny ʐən", "audio": "women/2_women.wav"},
-            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "phonemes": "ɕjʊŋ", "audio": "men/3_men.wav"},
-            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "phonemes": "tɕʰy", "audio": "men/4_men.wav"},
-            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "phonemes": "ɕi xwan", "audio": "women/6_women.wav"},
-            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "phonemes": "tɕjɛ tɑʊ", "audio": "women/7_women.wav"},
-            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "phonemes": "ɕjʊŋ mɑʊ", "audio": "men/8_men.wav"},
-            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "phonemes": "ʂu tjɛn", "audio": "women/9_women.wav"},
-            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "phonemes": "tɕʰy njɛn", "audio": "men/10_men.wav"},
-            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "phonemes": "tʂʊŋ u", "audio": "women/11_women.wav"},
-            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "phonemes": "i tsɿ", "audio": "men/12_men.wav"},
-            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "phonemes": "ɕɥɛ ɕjɑʊ", "audio": "women/13_women.wav"},
-            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "phonemes": "i ɥɛn", "audio": "men/14_men.wav"},
-            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "phonemes": "jɔʊ ɕi", "audio": "women/15_women.wav"},
-            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "phonemes": "tʰa", "audio": "men/16_men.wav"},
+            {"type": "word", "id": 1, "chinese": "书", "pinyin": "shū", "english": "book", "phonemes": "ʂu", "tone": [1], "audio": "men/1_men.wav"},
+            {"type": "word", "id": 2, "chinese": "女人", "pinyin": "nǚrén", "english": "woman", "phonemes": "ny ʐən", "tone": [3, 2], "audio": "women/2_women.wav"},
+            {"type": "word", "id": 3, "chinese": "雄", "pinyin": "xióng", "english": "male/hero", "phonemes": "ɕjʊŋ", "tone": [1], "audio": "men/3_men.wav"},
+            {"type": "word", "id": 4, "chinese": "去", "pinyin": "qù", "english": "to go", "phonemes": "tɕʰy", "tone": [4], "audio": "men/4_men.wav"},
+            {"type": "word", "id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "english": "to like", "phonemes": "ɕi xwan", "tone": [3, 1], "audio": "women/6_women.wav"},
+            {"type": "word", "id": 7, "chinese": "街道", "pinyin": "jiēdào", "english": "street", "phonemes": "tɕjɛ tɑʊ", "tone": [1, 4], "audio": "women/7_women.wav"},
+            {"type": "word", "id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "english": "panda", "phonemes": "ɕjʊŋ mɑʊ", "tone": [2, 1], "audio": "men/8_men.wav"},
+            {"type": "word", "id": 9, "chinese": "书店", "pinyin": "shūdiàn", "english": "bookstore", "phonemes": "ʂu tjɛn", "tone": [1, 4], "audio": "women/9_women.wav"},
+            {"type": "word", "id": 10, "chinese": "去年", "pinyin": "qùnián", "english": "last year", "phonemes": "tɕʰy njɛn", "tone": [4, 2], "audio": "men/10_men.wav"},
+            {"type": "word", "id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "english": "noon", "phonemes": "tʂʊŋ u", "tone": [1, 3], "audio": "women/11_women.wav"},
+            {"type": "word", "id": 12, "chinese": "椅子", "pinyin": "yǐzi", "english": "chair", "phonemes": "i tsɿ", "tone": [3, 5], "audio": "men/12_men.wav"},
+            {"type": "word", "id": 13, "chinese": "学校", "pinyin": "xuéxiào", "english": "school", "phonemes": "ɕɥɛ ɕjɑʊ", "tone": [2, 4], "audio": "women/13_women.wav"},
+            {"type": "word", "id": 14, "chinese": "医院", "pinyin": "yīyuàn", "english": "hospital", "phonemes": "i ɥɛn", "tone": [1, 4], "audio": "men/14_men.wav"},
+            {"type": "word", "id": 15, "chinese": "游戏", "pinyin": "yóuxì", "english": "game", "phonemes": "jɔʊ ɕi", "tone": [1, 4], "audio": "women/15_women.wav"},
+            {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "phonemes": "tʰa", "tone": [1], "audio": "men/16_men.wav"},
         ]
         
         # 15 sentences - WAV format
