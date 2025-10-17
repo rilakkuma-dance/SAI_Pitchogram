@@ -238,7 +238,7 @@ class ToneIntroductionQuizWithSAI:
         
         # SAI label
         self.sai_label = self.ax_sai.text(
-            0.02, 0.02, 'Click Play to see SAI pattern',
+            0.02, 0.02, 'Click Show to see SAI pattern',
             transform=self.ax_sai.transAxes,
             verticalalignment='bottom', fontsize=11,
             color='cyan', weight='bold',
@@ -252,13 +252,13 @@ class ToneIntroductionQuizWithSAI:
         
         # Play button
         ax_play = plt.axes([0.35, 0.34, 0.3, 0.05])
-        self.btn_play = Button(ax_play, '▶ Play & Show SAI', color='#5B5FED', hovercolor='#4B4FDD')
+        self.btn_play = Button(ax_play, '▶ Show SAI', color='#5B5FED', hovercolor='#4B4FDD')
         self.btn_play.label.set_color('white')
         self.btn_play.label.set_weight('bold')
         self.btn_play.on_clicked(self.play_audio)
         
         # Status text
-        self.status_text = main_ax.text(0.5, 0.30, 'Click Play to hear & see the word', 
+        self.status_text = main_ax.text(0.5, 0.30, 'Click Show to hear & see the word', 
                     fontsize=9, ha='center', va='center', color='#7f8c8d')
         
         # Instruction text
@@ -318,12 +318,12 @@ class ToneIntroductionQuizWithSAI:
         self.vis.img[:] = 0
         self.im_sai.set_data(self.vis.img)
         
-        self.status_text.set_text('Click Play to hear & see the word')
+        self.status_text.set_text('Click Show to hear & see the word')
         self.status_text.set_color('#7f8c8d')
         self.answer_text.set_text('')
         self.feedback_text.set_text('')
         self.text_input.set_val('')
-        self.sai_label.set_text('Click Play to see SAI pattern')
+        self.sai_label.set_text('Click Show to see SAI pattern')
         
         self.fig.canvas.draw_idle()
         self._update_progress()
@@ -387,7 +387,7 @@ class ToneIntroductionQuizWithSAI:
         def _play():
             self.is_playing = True
             self.btn_play.label.set_text('Processing...')
-            self.status_text.set_text('🔊 Playing & generating SAI...')
+            self.status_text.set_text('🔊 Generating SAI...')
             self.status_text.set_color('#3498db')
             self.fig.canvas.draw_idle()
             
@@ -399,7 +399,7 @@ class ToneIntroductionQuizWithSAI:
                     self.status_text.set_text(f"⚠️ Audio file not found")
                     self.status_text.set_color('red')
                     self.is_playing = False
-                    self.btn_play.label.set_text('▶ Play & Show SAI')
+                    self.btn_play.label.set_text('▶ Show SAI')
                     self.fig.canvas.draw_idle()
                     return
                 
@@ -434,7 +434,7 @@ class ToneIntroductionQuizWithSAI:
                 self.status_text.set_color('red')
             
             self.is_playing = False
-            self.btn_play.label.set_text('▶ Play & Show SAI')
+            self.btn_play.label.set_text('▶ Show SAI')
             self.fig.canvas.draw_idle()
         
         threading.Thread(target=_play, daemon=True).start()
@@ -449,7 +449,7 @@ class ToneIntroductionQuizWithSAI:
             return
         
         if not self.timer_started:
-            self.status_text.set_text('⚠️ Please click Play first')
+            self.status_text.set_text('⚠️ Please click Show first')
             self.status_text.set_color('orange')
             self.fig.canvas.draw_idle()
             return
