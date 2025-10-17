@@ -126,6 +126,9 @@ class ToneSpectrogramQuiz:
         self.question_start_time = None
         self.question_elapsed_time = 0
         self.spectrogram_shown = False
+
+        # Store already used words
+        self.used_words = set()
         
         self.results = []
         self.session_start_time = datetime.now()
@@ -221,7 +224,12 @@ class ToneSpectrogramQuiz:
         self.fig.canvas.draw_idle()
         
     def _select_random_item(self):
-        self.current_item = random.choice(self.vocab_items)
+        # added this to prevent duplication of words
+        random_item = random.choice(self.vocab_items)
+        while random_item['id'] in self.used_words:
+            random_item = random.choice(self.vocab_items)
+        self.current_item = random_item
+        self.used_words.add(random_item['id'])
         self.current_spectrogram = None
         self.answered = False
         self.spectrogram_shown = False

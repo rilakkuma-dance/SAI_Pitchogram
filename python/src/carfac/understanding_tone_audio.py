@@ -80,7 +80,10 @@ class ToneIntroductionQuiz:
         self.question_start_time = None
         self.question_elapsed_time = 0
         self.timer_started = False
-        
+
+        # Store already used words
+        self.used_words = set()
+
         # Store results for each question
         self.results = []
         self.session_start_time = datetime.now()
@@ -166,8 +169,14 @@ class ToneIntroductionQuiz:
         self.fig.canvas.draw_idle()
         
     def _select_random_item(self):
-        """Select a random vocabulary item"""
-        self.current_item = random.choice(self.vocab_items)
+        """Select a random vocabulary item without replacement"""
+
+        # added this to prevent duplication of words
+        random_item = random.choice(self.vocab_items)
+        while random_item['id'] in self.used_words:
+            random_item = random.choice(self.vocab_items)
+        self.current_item = random_item
+        self.used_words.add(random_item["id"])
         self.answered = False
         self.timer_started = False
         self.question_start_time = None

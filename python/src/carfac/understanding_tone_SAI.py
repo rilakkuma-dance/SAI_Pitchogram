@@ -201,6 +201,9 @@ class ToneIntroductionQuizWithSAI:
         self.question_start_time = None
         self.question_elapsed_time = 0
         self.timer_started = False
+
+        # Store already used words
+        self.used_words = set()
         
         # Results storage
         self.results = []
@@ -299,8 +302,14 @@ class ToneIntroductionQuizWithSAI:
         self.fig.canvas.draw_idle()
         
     def _select_random_item(self):
-        """Select a random vocabulary item"""
-        self.current_item = random.choice(self.vocab_items)
+        """Select a random vocabulary item without replacement"""
+
+        # added this to prevent duplication of words
+        random_item = random.choice(self.vocab_items)
+        while random_item['id'] in self.used_words:
+            random_item = random.choice(self.vocab_items)
+        self.current_item = random_item
+        self.used_words.add(random_item['id'])
         self.answered = False
         self.timer_started = False
         self.question_start_time = None
@@ -371,7 +380,7 @@ class ToneIntroductionQuizWithSAI:
         self.fig.canvas.draw_idle()
     
     def play_audio(self, event):
-        """Play audio and show SAI visualization"""
+        """Show SAI visualization"""
         if self.is_playing or not self.current_item:
             return
         
@@ -403,13 +412,13 @@ class ToneIntroductionQuizWithSAI:
                 print(f"   Pinyin: {self.current_item['pinyin']}")
                 
                 # Play audio in separate thread while processing SAI
-                sd.play(audio_data, sr)
+                # sd.play(audio_data, sr)
                 
                 # Process for SAI
                 self._process_audio_for_sai(audio_data)
                 
                 # Wait for playback to finish
-                sd.wait()
+                # sd.wait()
                 
                 # Start timer after playback
                 self.question_start_time = time.time()
