@@ -57,7 +57,7 @@ class ToneIntroductionQuiz:
             {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "women/9_women.wav"},
             {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "men/10_men.wav"},
             {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "women/11_women.wav"},
-            {"id": 12, "chinese": "椅子", "pinyin": "yǐzi", "tone": "35", "audio": "men/12_men.wav"},
+            {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "men/12_men.wav"},
             {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "women/13_women.wav"},
             {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "men/14_men.wav"},
             {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "women/15_women.wav"},
