@@ -162,7 +162,7 @@ class PracticeSession:
         self.audio_base_path = Path(audio_base_path)
         self.practice_session = None
         self.current_index = 0
-        self.all_items = practice_set['words'] + practice_set['sentences']
+        self.all_items = practice_set['words']
         self.total_items = len(self.all_items)
     
     def get_current_item(self):
@@ -203,7 +203,7 @@ class PracticeSession:
     
     def get_progress_string(self):
         """Get progress string like '2/5'"""
-        return f"{self.current_index + 1}/{self.total_items}"
+        return f"{self.current_index + 1} of {self.total_items}"
     
     def get_item_type(self):
         """Return 'word' or 'sentence'"""
@@ -629,7 +629,8 @@ class SAIVisualizationWithWav2Vec2:
         # Simple local audio recorder (uses the imported module)
         self.is_recording_simple = False
         self.recorder = AudioRecorder(sample_rate=self.sample_rate)
-
+        self.vocab_list = None  # Will be set in main()
+        self.audio_base_path = None  # Will be set in main()
         # Tone grader (for words)
         self.grader = ToneGraderWord()
 
@@ -698,7 +699,7 @@ class SAIVisualizationWithWav2Vec2:
         print(f"\n🎧 Loading item ({self.practice_session.get_progress_string()}): {self._get_item_display(item)}")
         
         # 1. Update text fields for the Reference SAI
-        reference_pronunciation = item.get('pinyin', item.get('chinese'))  # Changed from mandarin
+        reference_pronunciation = item.get('pinyin', item.get('chinese'))
         translation = item.get('english')
         target_phonemes = item.get('phonemes', 'placeholder')
         
@@ -745,34 +746,44 @@ class SAIVisualizationWithWav2Vec2:
         if hasattr(self, 'practice_text'):
             item_text = f"[{item['type'].upper()}] {item['chinese']}\n{item['pinyin']}\n{item['english']}"
             self.practice_text.set_text(item_text)
-    
+
         if hasattr(self, 'progress_text'):
             self.progress_text.set_text(self.practice_session.get_progress_string())
         
+        # FIX: Update status to "Ready" instead of "Playing reference audio..."
         if hasattr(self, 'status_text'):
-            self.status_text.set_text('🔊 Playing reference audio...')
-            self.status_text.set_color('cyan')
+            self.status_text.set_text('Ready')
+            self.status_text.set_color('lime')
+            
 
     def clear_phoneme_feedback(self, event=None):
         """Clear the Wav2Vec2 and score feedback"""
-        if hasattr(self, 'transcription_realtime'):
-            self.transcription_realtime.set_text(self.wav2vec2_handler.get_current_status()[0])
-            self.transcription_realtime.set_color(self.wav2vec2_handler.get_current_status()[1])
-            self.vis_realtime.img[:] = 0 # Clear the user's SAI visualization
-            self.im_realtime.set_data(self.vis_realtime.img)
-            self.fig.canvas.draw_idle()
+        # Clear the user's SAI visualization
+        self.vis_realtime.img[:] = 0
+        self.im_realtime.set_data(self.vis_realtime.img)
+        
+        # Update status in practice area
+        if hasattr(self, 'status_text'):
+            self.status_text.set_text('Ready')
+            self.status_text.set_color('lime')
+        
+        self.fig.canvas.draw_idle()
 
     def _handle_processing_complete(self, user_audio, transcription, score):
         """Callback run after Wav2Vec2 processing finishes"""
         print(f"Processing complete: Transcription='{transcription}', Score={score:.2f}")
 
-        # 1. Update transcription/score text
-        status_text, status_color = self.wav2vec2_handler.get_current_status()
-        self.transcription_realtime.set_text(status_text)
-        self.transcription_realtime.set_color(status_color)
+        # 1. Update status text in practice area
+        if hasattr(self, 'status_text'):
+            if transcription and transcription != "no_audio":
+                self.status_text.set_text(f'Score: {score:.1f}% | {transcription[:30]}...')
+                self.status_text.set_color('yellow' if score < 70 else 'lime')
+            else:
+                self.status_text.set_text('No audio detected')
+                self.status_text.set_color('orange')
 
         # 2. Re-process the user's audio through SAI/CARFAC for visualization
-        self.vis_realtime.img[:] = 0 # Clear previous user SAI
+        self.vis_realtime.img[:] = 0
         self.im_realtime.set_data(self.vis_realtime.img)
         
         # Process user audio for SAI frame by frame
@@ -780,7 +791,7 @@ class SAIVisualizationWithWav2Vec2:
         remaining_samples = len(user_audio) % self.chunk_size
         
         def _process_user_sai():
-            processor = AudioProcessor(self.sample_rate) # New processor for the full buffer
+            processor = AudioProcessor(self.sample_rate)
             sai_processor = SAIProcessor(self.sai_params)
 
             for i in range(total_frames):
@@ -791,11 +802,9 @@ class SAIVisualizationWithWav2Vec2:
                 nap_output = processor.process_chunk(chunk)
                 sai_output = sai_processor.RunSegment(nap_output)
                 
-                # Update visualization handler (simulating the realtime update)
                 self.vis_realtime.get_vowel_embedding(nap_output)
                 self.vis_realtime.run_frame(sai_output)
                 
-                # Shift and draw column
                 if self.vis_realtime.img.shape[1] > 1:
                     self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
                     self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
@@ -812,13 +821,9 @@ class SAIVisualizationWithWav2Vec2:
                     self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
                     self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
                     
-            # Request redraw
             self.fig.canvas.draw_idle()
 
-        # Run SAI processing in a separate thread so it doesn't block the main loop, 
-        # as it can take a moment for the entire buffer.
         threading.Thread(target=_process_user_sai, daemon=True).start()
-
 
     def decrease_sai_speed(self, event=None):
         self.sai_speed = max(0.1, self.sai_speed - 0.25)
@@ -895,19 +900,7 @@ class SAIVisualizationWithWav2Vec2:
         self.reference_text = phonemes.strip()
         self.reference_pronunciation = pronunciation
         self.translated_text = translation.strip()
-        
-        # Update the display text immediately
-        if hasattr(self, 'transcription_file'):
-            reference_display = f"Target: {self.reference_pronunciation}"
-            if self.translated_text:
-                reference_display += f" - {self.translated_text}"
-            
-            # Add progress string
-            if hasattr(self, 'practice_session') and self.practice_session:
-                 reference_display += f" ({self.practice_session.get_progress_string()})"
-                 
-            self.transcription_file.set_text(reference_display)
-            self.fig.canvas.draw_idle()
+        # Note: No need to update text overlays - they're now in practice area
 
 
     def _setup_audio_playback(self):
@@ -1027,6 +1020,45 @@ class SAIVisualizationWithWav2Vec2:
             except queue.Empty:
                 continue
 
+    def update_visualization(self, frame):
+        try:
+            # --- Reference SAI (File) Update ---
+            if self.audio_data is not None:
+                chunk, chunk_index = self.get_next_file_chunk()
+                if chunk is not None and chunk_index >= 0:
+                    try:
+                        nap_output = self.processor_file.process_chunk(chunk)
+                        sai_output = self.sai_file.RunSegment(nap_output)
+                        self.vis_file.get_vowel_embedding(nap_output)
+                        self.vis_file.run_frame(sai_output)
+
+                        self.sai_file_index += self.sai_speed
+                        if self.sai_file_index >= 1.0:
+                            steps = int(self.sai_file_index)
+                            self.sai_file_index -= steps
+                            for _ in range(min(steps, 3)):
+                                if self.vis_file.img.shape[1] > 1:
+                                    self.vis_file.img[:, :-1] = self.vis_file.img[:, 1:]
+                                    self.vis_file.draw_column(self.vis_file.img[:, -1])
+                                    
+                    except Exception as e:
+                        pass
+                
+                current_max_file = np.max(self.vis_file.img) if self.vis_file.img.size else 1
+                self.im_file.set_data(self.vis_file.img)
+                self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
+
+            # --- User SAI (Realtime) Update ---
+            current_max_rt = np.max(self.vis_realtime.img) if self.vis_realtime.img.size > 0 else 1
+            self.im_realtime.set_data(self.vis_realtime.img)
+            self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
+
+        except Exception as e:
+            pass
+
+        # Return only what exists
+        return [self.im_realtime, self.im_file, self.status_text, self.practice_text, self.progress_text]
+
     def _save_recording_with_metadata(self, audio_data):
         """Save recorded audio and metadata to files"""
         try:
@@ -1083,12 +1115,12 @@ class SAIVisualizationWithWav2Vec2:
                     f.write(f"Transcription: {self.wav2vec2_handler.result}\n")
                     f.write(f"Score: {self.wav2vec2_handler.overall_score:.2f}%\n")
             
-            print(f"✅ Recording saved: {wav_path}")
-            print(f"✅ Metadata saved: {txt_path}")
+            print(f"Recording saved: {wav_path}")
+            print(f"Metadata saved: {txt_path}")
             
             # Update status text
             if hasattr(self, 'status_text'):
-                self.status_text.set_text(f'✅ Saved: {wav_filename}')
+                self.status_text.set_text(f'Saved: {wav_filename}')
                 self.status_text.set_color('lime')
                 self.fig.canvas.draw_idle()
 
@@ -1157,102 +1189,124 @@ class SAIVisualizationWithWav2Vec2:
         print("SAIVisualizationWithWav2Vec2 stopped.")
 
     def _setup_dual_visualization(self):
-        self.fig = plt.figure(figsize=(16, 14))
-        # Give more rows to SAI (0-7), then practice area (8-9), then buttons (10)
-        gs = self.fig.add_gridspec(11, 2, height_ratios=[1]*8 + [0.4, 0.4, 0.5]) 
-        
-        # --- SAI Axes (Row 0-7) - Larger now ---
-        self.ax_realtime = self.fig.add_subplot(gs[0:8, 0])
-        self.ax_file = self.fig.add_subplot(gs[0:8, 1])
+        """Create visualization with side-by-side SAI comparison - UPDATED TO MATCH REFERENCE"""
+        self.fig = plt.figure(figsize=(16, 10))
+        # Match reference: 3 rows with 7:2:0.3 ratio
+        gs = self.fig.add_gridspec(3, 2, height_ratios=[7, 2, 0.3], width_ratios=[1, 1])
 
+        # LEFT SAI display (Your Audio - Live) - SWAPPED to match reference
+        self.ax_realtime = self.fig.add_subplot(gs[0, 0])
         self.im_realtime = self.ax_realtime.imshow(
-            self.vis_realtime.img, aspect='auto', origin='upper', interpolation='bilinear', extent=[0, 200, 0, 200]
+            self.vis_realtime.img, aspect='auto', origin='lower',
+            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            cmap='magma', vmin=0, vmax=255
         )
+        self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=13, weight='bold')
         self.ax_realtime.axis('off')
-        
+
+        # RIGHT SAI display (Reference Audio) - SWAPPED to match reference
+        self.ax_file = self.fig.add_subplot(gs[0, 1])
         self.im_file = self.ax_file.imshow(
-            self.vis_file.img, aspect='auto', origin='upper', interpolation='bilinear', extent=[0, 200, 0, 200]
+            self.vis_file.img, aspect='auto', origin='lower',
+            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            cmap='magma', vmin=0, vmax=255
         )
+        self.ax_file.set_title('Reference Audio', color='cyan', fontsize=13, weight='bold')
         self.ax_file.axis('off')
-        
-        # --- Practice Display Area (Row 8-9, spans both columns) - Lower now ---
-        self.ax_practice = self.fig.add_subplot(gs[8:10, :])
+
+        # Practice item display (spans both columns) - Row 1
+        self.ax_practice = self.fig.add_subplot(gs[1, :])
         self.ax_practice.axis('off')
-        self.ax_practice.set_facecolor('#1a1a2e')
-        
-        # ... rest of the practice display code stays the same ...
-        
-        # Main practice item text
+        self.ax_practice.set_facecolor('#16213e')
+
         current_item = self.practice_session.get_current_item() if self.practice_session else None
         if current_item:
             item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
         else:
             item_text = "Loading..."
         
+        # Main practice text - centered
         self.practice_text = self.ax_practice.text(
-            0.5, 0.6, item_text, transform=self.ax_practice.transAxes,
-            color='cyan', fontsize=14, verticalalignment='center',
+            0.5, 0.5, item_text, transform=self.ax_practice.transAxes,
+            color='cyan', fontsize=18, verticalalignment='center',
             horizontalalignment='center', weight='bold',
             bbox=dict(boxstyle='round,pad=0.8', facecolor='black', alpha=0.9, edgecolor='cyan', linewidth=2)
         )
-        
-        # Status text (bottom left)
+
+        # Status text (bottom left of practice area)
         self.status_text = self.ax_practice.text(
-            0.02, 0.05, 'Ready - Press Play to hear reference', transform=self.ax_practice.transAxes,
-            color='lime', fontsize=9, verticalalignment='bottom',
+            0.02, 0.02, 'Ready - Press Play to hear reference', transform=self.ax_practice.transAxes,
+            color='lime', fontsize=11, verticalalignment='bottom',
             bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.8)
         )
-        
-        # Progress indicator (top right)
+
+        # Progress indicator (top right of practice area)
         if self.practice_session:
-            progress_text = f"{self.practice_session.get_progress_string()}"
+            progress_text = f"Set | {self.practice_session.get_progress_string()}"
         else:
             progress_text = "Practice Mode"
         
         self.progress_text = self.ax_practice.text(
-            0.98, 0.95, progress_text, transform=self.ax_practice.transAxes,
+            0.98, 0.98, progress_text, transform=self.ax_practice.transAxes,
             color='yellow', fontsize=10, verticalalignment='top',
             horizontalalignment='right',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
-        
-        # --- Original text overlays on SAI (keep these too) ---
-        self.transcription_realtime = self.ax_realtime.text(
-            0.02, 0.02, 'Live SAI', transform=self.ax_realtime.transAxes, verticalalignment='bottom', 
-            fontsize=10, color='lime', weight='bold', bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
-        )
-        self.transcription_file = self.ax_file.text(
-            0.02, 0.02, '', transform=self.ax_file.transAxes, verticalalignment='bottom', 
-            fontsize=10, color='cyan', weight='bold', bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
-        )
 
-        # --- Control Buttons (Row 9) ---
-        button_width = 0.15
-        button_height = 0.04
-        start_x = 0.15
-        spacing = 0.02
-        y_pos = 0.02
+        # Control buttons (bottom row - Row 2) - Match reference spacing
+        from matplotlib.widgets import Button
 
-        self.ax_playback = plt.axes([start_x, y_pos, button_width, button_height])
-        self.btn_playback = Button(self.ax_playback, 'Play Ref', color='lightgreen', hovercolor='green')
+        self.ax_play_button = plt.axes([0.20, 0.08, 0.10, 0.05])
+        self.btn_playback = Button(self.ax_play_button, 'Play',
+                                color='lightcyan', hovercolor='cyan')
         self.btn_playback.on_clicked(self.toggle_playback)
 
-        self.ax_record = plt.axes([start_x + (button_width + spacing), y_pos, button_width, button_height])
-        self.btn_record = Button(self.ax_record, 'Start Record', color='lightcoral', hovercolor='red')
+        self.ax_rec_button = plt.axes([0.35, 0.08, 0.12, 0.05])
+        self.btn_record = Button(self.ax_rec_button, 'Start Record',
+                                color='lightgreen', hovercolor='green')
         self.btn_record.on_clicked(self.toggle_record)
-        
-        self.ax_next = plt.axes([start_x + 2 * (button_width + spacing), y_pos, button_width, button_height])
-        self.btn_next = Button(self.ax_next, 'Next Item', color='lightblue', hovercolor='blue')
+
+        self.ax_save_button = plt.axes([0.53, 0.08, 0.12, 0.05])
+        self.btn_save = Button(self.ax_save_button, 'Save Recording',
+                            color='lightblue', hovercolor='blue')
+        self.btn_save.on_clicked(self._save_recording_with_metadata)
+
+        self.ax_next_button = plt.axes([0.70, 0.08, 0.10, 0.05])
+        self.btn_next = Button(self.ax_next_button, 'Next Item',
+                            color='lightyellow', hovercolor='yellow')
         self.btn_next.on_clicked(self.next_item)
 
-        self.ax_new_set = plt.axes([start_x + 3 * (button_width + spacing), y_pos, button_width, button_height])
-        self.btn_new_set = Button(self.ax_new_set, 'New Set', color='lightgray', hovercolor='gray')
-        self.btn_new_set.on_clicked(self.new_set)
+        # Optional: Add "New Set" button if you want that feature
+        # self.ax_newset_button = plt.axes([0.67, 0.08, 0.10, 0.05])
+        # self.btn_newset = Button(self.ax_newset_button, 'New Set',
+        #                          color='lightgray', hovercolor='gray')
+        # self.btn_newset.on_clicked(self.generate_new_set)
 
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.98, bottom=0.05, hspace=0.4, wspace=0.15)
-        self.fig.patch.set_facecolor('#0a0a0a')  # Darker background
+        # Figure styling - match reference
+        self.fig.patch.set_facecolor('#1a1a2e')
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.96, bottom=0.06, hspace=0.15, wspace=0.15)
         
+        # Key press handler
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+
+        # REMOVE these old text overlays on SAI images (they're now in practice area)
+        # Delete or comment out:
+        # self.transcription_realtime = self.ax_realtime.text(...)
+        # self.transcription_file = self.ax_file.text(...)
+
+    def generate_new_set(self, event=None):
+        """Generate a completely new practice set"""
+        if not self.vocab_list or not self.audio_base_path:
+            print("ERROR: vocab_list or audio_base_path not initialized")
+            return
+        
+        print("--- Generating New Practice Set ---")
+        new_practice_set = get_random_practice_set_from_vocablist(self.vocab_list)
+        self.practice_session = PracticeSession(new_practice_set, self.audio_manager, 
+                                            audio_base_path=str(self.audio_base_path))
+        self._load_practice_item(self.practice_session.get_current_item())
+        self.progress_text.set_text(f"Set | {self.practice_session.get_progress_string()}")
+
 
     def toggle_record(self, event=None):
         """Toggle recording on/off"""
@@ -1264,15 +1318,13 @@ class SAIVisualizationWithWav2Vec2:
             # Start recording
             self.is_recording_simple = True
             self.btn_record.label.set_text('Recording...')
-            self.btn_record.color = 'red'
             self.btn_record.ax.set_facecolor('red')
             self.recorder.start_recording()
             self.clear_phoneme_feedback()
             
-            # Update status
             if hasattr(self, 'status_text'):
-                self.status_text.set_text('Recording in progress...')
-                self.status_text.set_color('red')
+                self.status_text.set_text('● Recording in progress...')
+                self.status_text.set_color('red')  # FIX: Changed from = to ()
                 self.fig.canvas.draw_idle()
             
             print("Recording started...")
@@ -1280,13 +1332,8 @@ class SAIVisualizationWithWav2Vec2:
             # Stop recording
             self.is_recording_simple = False
             self.btn_record.label.set_text('Start Record')
-            self.btn_record.color = 'lightcoral'
-            self.btn_record.ax.set_facecolor('lightcoral')
+            self.btn_record.ax.set_facecolor('lightgreen')
             self.recorder.stop_recording()
-            
-            # Update status immediately
-            self.transcription_realtime.set_text("Processing...")
-            self.transcription_realtime.set_color("orange")
             
             if hasattr(self, 'status_text'):
                 self.status_text.set_text('Processing pronunciation...')
@@ -1318,7 +1365,7 @@ class SAIVisualizationWithWav2Vec2:
         if self.audio_output_stream and self.audio_output_stream.active:
             # If playing, stop it
             self.audio_output_stream.stop()
-            self.btn_playback.label.set_text('🔊 Play Ref')
+            self.btn_playback.label.set_text('Playing')
             print("Reference playback stopped")
         else:
             # If stopped, play the audio associated with the current item
@@ -1337,63 +1384,6 @@ class SAIVisualizationWithWav2Vec2:
                     print(f"⚠️ Cannot play audio: File not found at {audio_path}")
             else:
                 print("No practice item selected.")
-
-
-    def update_visualization(self, frame):
-        try:
-            # Update the user's SAI visualization status (Wav2Vec2 status)
-            if not self.wav2vec2_handler.is_processing and not self.is_recording_simple:
-                status_text, status_color = self.wav2vec2_handler.get_current_status()
-                if self.transcription_realtime.get_text() not in ("Processing...", "Recording..."):
-                    self.transcription_realtime.set_text(status_text)
-                    self.transcription_realtime.set_color(status_color)
-            
-            # --- Reference SAI (File) Update ---
-            if self.audio_data is not None:
-                chunk, chunk_index = self.get_next_file_chunk()
-                if chunk is not None and chunk_index >= 0:
-                    try:
-                        nap_output = self.processor_file.process_chunk(chunk)
-                        sai_output = self.sai_file.RunSegment(nap_output)
-                        self.vis_file.get_vowel_embedding(nap_output)
-                        self.vis_file.run_frame(sai_output)
-
-                        self.sai_file_index += self.sai_speed
-                        if self.sai_file_index >= 1.0:
-                            steps = int(self.sai_file_index)
-                            self.sai_file_index -= steps
-                            for _ in range(min(steps, 3)):
-                                if self.vis_file.img.shape[1] > 1:
-                                    self.vis_file.img[:, :-1] = self.vis_file.img[:, 1:]
-                                    self.vis_file.draw_column(self.vis_file.img[:, -1])
-                                    
-                    except Exception as e:
-                        pass
-                
-                current_max_file = np.max(self.vis_file.img) if self.vis_file.img.size else 1
-                self.im_file.set_data(self.vis_file.img)
-                self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
-                
-                reference_display = f"Target: {self.reference_pronunciation}"
-                if self.translated_text:
-                    reference_display += f" - {self.translated_text}"
-                reference_display += f" ({self.practice_session.get_progress_string()})"
-                self.transcription_file.set_text(reference_display)
-
-            # --- User SAI (Realtime) Update ---
-            current_max_rt = np.max(self.vis_realtime.img) if self.vis_realtime.img.size > 0 else 1
-            self.im_realtime.set_data(self.vis_realtime.img)
-            self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
-
-        except Exception as e:
-            pass
-
-        # Return only SAI images and text overlays
-        elements_to_return = [
-            self.im_realtime, self.im_file, 
-            self.transcription_realtime, self.transcription_file
-        ]
-        return [e for e in elements_to_return if e is not None]
 
 # Add this class before the main() function
 class VocabList:
@@ -1420,41 +1410,7 @@ class VocabList:
             {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "phonemes": "tʰa", "tone": [1], "audio": "men/16_men.wav"},
         ]
         
-        # 15 sentences - WAV format
-        sentences = [
-            {"type": "sentence", "id": 5, "chinese": "女人去买书", 
-             "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_women.wav"},
-            {"type": "sentence", "id": 17, "chinese": "我喜欢吃苹果。", 
-             "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_men.wav"},
-            {"type": "sentence", "id": 18, "chinese": "他去学校学习汉语。", 
-             "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_women.wav"},
-            {"type": "sentence", "id": 19, "chinese": "熊猫在公园里玩。", 
-             "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_men.wav"},
-            {"type": "sentence", "id": 20, "chinese": "街道上有很多人。", 
-             "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_women.wav"},
-            {"type": "sentence", "id": 21, "chinese": "医院旁边有一家书店。", 
-             "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_men.wav"},
-            {"type": "sentence", "id": 22, "chinese": "她是一个聪明的女人。", 
-             "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_women.wav"},
-            {"type": "sentence", "id": 23, "chinese": "我每天中午吃午饭。", 
-             "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_men.wav"},
-            {"type": "sentence", "id": 24, "chinese": "游戏很有趣。", 
-             "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_women.wav"},
-            {"type": "sentence", "id": 25, "chinese": "请坐在椅子上。", 
-             "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_men.wav"},
-            {"type": "sentence", "id": 26, "chinese": "我想去北京旅行。", 
-             "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_women.wav"},
-            {"type": "sentence", "id": 27, "chinese": "学校的老师很好。", 
-             "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_men.wav"},
-            {"type": "sentence", "id": 28, "chinese": "他每天早上跑步。", 
-             "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_women.wav"},
-            {"type": "sentence", "id": 29, "chinese": "我在家里玩游戏。", 
-             "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_men.wav"},
-            {"type": "sentence", "id": 30, "chinese": "她喜欢喝茶。", 
-             "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_women.wav"},
-        ]
-        
-        all_potential_items = words + sentences
+        all_potential_items = words
         
         # Filter to only include items whose audio files actually exist
         self.all_items = []
@@ -1542,6 +1498,10 @@ def main():
             playback_speed=1.0, 
             loop_audio=(practice_set is not None)
         )
+
+        # ADD THESE LINES:
+        sai_vis.vocab_list = vocab_list
+        sai_vis.audio_base_path = audio_base
         
         if practice_set:
             # Pass audio_base_path to PracticeSession

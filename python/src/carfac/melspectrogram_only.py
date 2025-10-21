@@ -247,7 +247,7 @@ class PracticeSet:
         """Get current progress string"""
         if not self.current_set:
             return "No set active"
-        return f"Item {self.current_index + 1} of {len(self.current_set)}"
+        return f"{self.current_index + 1} of {len(self.current_set)}"
 
     def get_audio_path(self, item):
         """Get the full path to the audio file for an item"""
@@ -311,7 +311,7 @@ class SimpleAudioVisualizerWithSAI:
             interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
             cmap='magma', vmin=-80, vmax=0
         )
-        self.ax_sai.set_title('Your Audio (Live/Recording)', color='lime', fontsize=13, weight='bold')
+        self.ax_sai.set_title('Your Audio (Live)', color='lime', fontsize=13, weight='bold')
         self.ax_sai.axis('off')
         self.ax_sai.set_ylabel('Frequency Channels', color='white', fontsize=10)
         self.ax_sai.tick_params(colors='white')
@@ -323,7 +323,7 @@ class SimpleAudioVisualizerWithSAI:
             interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
             cmap='magma', vmin=-80, vmax=0
         )
-        self.ax_ref_sai.set_title('Reference Audio (Native Speaker)', color='cyan', fontsize=13, weight='bold')
+        self.ax_ref_sai.set_title('Reference Audio', color='cyan', fontsize=13, weight='bold')
         self.ax_ref_sai.set_ylabel('Frequency Channels', color='white', fontsize=10)
         self.ax_ref_sai.tick_params(colors='white')
         self.ax_ref_sai.axis('off')
@@ -345,13 +345,13 @@ class SimpleAudioVisualizerWithSAI:
 
         # Status text (bottom left of practice area)
         self.status_text = self.ax_practice.text(
-            0.02, 0.02, 'Ready - Click Play to hear reference', transform=self.ax_practice.transAxes,
+            0.02, 0.02, 'Ready', transform=self.ax_practice.transAxes,
             color='lime', fontsize=11, verticalalignment='bottom',
             bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.8)
         )
 
         # Progress indicator (top right of practice area)
-        progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
+        progress_text = f"{self.practice_set.get_progress()}"
         self.progress_text = self.ax_practice.text(
             0.98, 0.98, progress_text, transform=self.ax_practice.transAxes,
             color='yellow', fontsize=10, verticalalignment='top',
@@ -362,39 +362,29 @@ class SimpleAudioVisualizerWithSAI:
         # Control buttons (bottom, spans both columns)
         from matplotlib.widgets import Button
 
-        self.ax_play_button = plt.axes([0.15, 0.02, 0.08, 0.03])
-        self.play_button = Button(self.ax_play_button, 'Play Ref',
+        self.ax_play_button = plt.axes([0.20, 0.08, 0.10, 0.05])
+        self.play_button = Button(self.ax_play_button, 'Play Spectrogram',
                                 color='lightcyan', hovercolor='cyan')
         self.play_button.label.set_text('Play')  # Shorter initial text
         self.play_button.on_clicked(self.play_reference_audio)
 
-        self.ax_rec_button = plt.axes([0.25, 0.02, 0.10, 0.03])
+        self.ax_rec_button = plt.axes([0.35, 0.08, 0.12, 0.05])
         self.rec_button = Button(self.ax_rec_button, 'Start Recording',
                                  color='lightgreen', hovercolor='green')
         self.rec_button.on_clicked(self.toggle_recording)
 
-        self.ax_save_button = plt.axes([0.37, 0.02, 0.10, 0.03])
+        self.ax_save_button = plt.axes([0.53, 0.08, 0.12, 0.05])
         self.save_button = Button(self.ax_save_button, 'Save Recording',
                                   color='lightblue', hovercolor='blue')
         self.save_button.on_clicked(self.save_recording)
 
-        self.ax_next_button = plt.axes([0.49, 0.02, 0.08, 0.03])
+        self.ax_next_button = plt.axes([0.70, 0.08, 0.10, 0.05])
         self.next_button = Button(self.ax_next_button, 'Next Item',
                                   color='lightyellow', hovercolor='yellow')
         self.next_button.on_clicked(self.next_practice_item)
 
-        self.ax_newset_button = plt.axes([0.59, 0.02, 0.10, 0.03])
-        self.newset_button = Button(self.ax_newset_button, 'New Set',
-                                    color='lightcoral', hovercolor='red')
-        self.newset_button.on_clicked(self.generate_new_set)
-
-        self.ax_clear_button = plt.axes([0.71, 0.02, 0.10, 0.03])
-        self.clear_button = Button(self.ax_clear_button, 'Clear Ref',
-                                   color='lightgray', hovercolor='gray')
-        self.clear_button.on_clicked(self.clear_reference)
-
-        self.fig.patch.set_facecolor('#0a0a0a')
-        self.ax_practice.set_facecolor('#1a1a2e')
+        self.fig.patch.set_facecolor('#1a1a2e')
+        self.ax_practice.set_facecolor('#16213e')
         plt.subplots_adjust(left=0.05, right=0.95, top=0.96, bottom=0.06, hspace=0.15, wspace=0.15)
 
     def add_to_buffer(self, chunk):
@@ -543,8 +533,8 @@ class SimpleAudioVisualizerWithSAI:
 
         self.reference_audio_playing = True
         self.play_button.label.set_text('Stop')
-        self.status_text.set_text('Playing reference (looping)...')
-        self.status_text.set_color('cyan')
+        self.status_text.set_text('Ready')
+        self.status_text.set_color('lime')
         print(f"Playing (loop): {audio_path}")
 
         # Ensure reference processing thread is running
@@ -643,7 +633,7 @@ class SimpleAudioVisualizerWithSAI:
             print(f"Error playing audio: {e}")
         finally:
             self.reference_audio_playing = False
-            self.play_button.label.set_text('🔊 Play')
+            self.play_button.label.set_text('Play Spectrogram')
 
     def _play_audio_file(self, audio_path: Path):
         """Play an audio file (wav or other formats via pydub) and feed frames into ref queue"""
@@ -654,7 +644,7 @@ class SimpleAudioVisualizerWithSAI:
             return
 
         self.reference_audio_playing = True
-        self.status_text.set_text('🔊 Playing & visualizing reference...')
+        self.status_text.set_text('Playing & visualizing reference...')
         self.status_text.set_color('cyan')
         print(f"Playing: {audio_path}")
 
@@ -809,8 +799,8 @@ class SimpleAudioVisualizerWithSAI:
         if next_item:
             item_text = f"[{next_item['type'].upper()}] {next_item['chinese']}\n{next_item['pinyin']}\n{next_item['english']}"
             self.practice_text.set_text(item_text)
-            self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
-            self.status_text.set_text('Ready - Click Play to hear reference')
+            self.progress_text.set_text(f"{self.practice_set.get_progress()}")
+            self.status_text.set_text('Ready')
             self.status_text.set_color('lime')
             
             # Auto-play the new reference audio
@@ -831,7 +821,7 @@ class SimpleAudioVisualizerWithSAI:
         item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
         self.practice_text.set_text(item_text)
         self.progress_text.set_text(f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}")
-        self.status_text.set_text('Ready - Click Play to hear reference')
+        self.status_text.set_text('Ready')
         self.status_text.set_color('lime')
         
         # Auto-play the new reference audio

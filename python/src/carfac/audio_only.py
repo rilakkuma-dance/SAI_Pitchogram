@@ -77,41 +77,7 @@ class PracticeSet:
             {"type": "word", "id": 16, "chinese": "她", "pinyin": "tā", "english": "she", "audio": "men/16_men.wav"},
         ]
         
-        # 15 sentences - WAV format
-        sentences = [
-            {"type": "sentence", "id": 5, "chinese": "女人去买书", 
-             "pinyin": "Nǚrén qù mǎi shū", "english": "The woman goes to buy books", "audio": "women/5_women.wav"},
-            {"type": "sentence", "id": 17, "chinese": "我喜欢吃苹果。", 
-             "pinyin": "Wǒ xǐhuān chī píngguǒ.", "english": "I like eating apples", "audio": "men/17_men.wav"},
-            {"type": "sentence", "id": 18, "chinese": "他去学校学习汉语。", 
-             "pinyin": "Tā qù xuéxiào xuéxí Hànyǔ.", "english": "He goes to school to learn Chinese", "audio": "women/18_women.wav"},
-            {"type": "sentence", "id": 19, "chinese": "熊猫在公园里玩。", 
-             "pinyin": "Xióngmāo zài gōngyuán lǐ wán.", "english": "The panda plays in the park", "audio": "men/19_men.wav"},
-            {"type": "sentence", "id": 20, "chinese": "街道上有很多人。", 
-             "pinyin": "Jiēdào shàng yǒu hěnduō rén.", "english": "There are many people on the street", "audio": "women/20_women.wav"},
-            {"type": "sentence", "id": 21, "chinese": "医院旁边有一家书店。", 
-             "pinyin": "Yīyuàn pángbiān yǒu yī jiā shūdiàn.", "english": "There is a bookstore next to the hospital", "audio": "men/21_men.wav"},
-            {"type": "sentence", "id": 22, "chinese": "她是一个聪明的女人。", 
-             "pinyin": "Tā shì yí ge cōngmíng de nǚrén.", "english": "She is a smart woman", "audio": "women/22_women.wav"},
-            {"type": "sentence", "id": 23, "chinese": "我每天中午吃午饭。", 
-             "pinyin": "Wǒ měitiān zhōngwǔ chī wǔfàn.", "english": "I eat lunch every day", "audio": "men/23_men.wav"},
-            {"type": "sentence", "id": 24, "chinese": "游戏很有趣。", 
-             "pinyin": "Yóuxì hěn yǒuqù.", "english": "The game is interesting", "audio": "women/24_women.wav"},
-            {"type": "sentence", "id": 25, "chinese": "请坐在椅子上。", 
-             "pinyin": "Qǐng zuò zài yǐzi shàng.", "english": "Please sit on the chair", "audio": "men/25_men.wav"},
-            {"type": "sentence", "id": 26, "chinese": "我想去北京旅行。", 
-             "pinyin": "Wǒ xiǎng qù Běijīng lǚxíng.", "english": "I want to travel to Beijing", "audio": "women/26_women.wav"},
-            {"type": "sentence", "id": 27, "chinese": "学校的老师很好。", 
-             "pinyin": "Xuéxiào de lǎoshī hěn hǎo.", "english": "The school's teacher is very good", "audio": "men/27_men.wav"},
-            {"type": "sentence", "id": 28, "chinese": "他每天早上跑步。", 
-             "pinyin": "Tā měitiān zǎoshang pǎobù.", "english": "He jogs every morning", "audio": "women/28_women.wav"},
-            {"type": "sentence", "id": 29, "chinese": "我在家里玩游戏。", 
-             "pinyin": "Wǒ zài jiā lǐ wán yóuxì.", "english": "I play games at home", "audio": "men/29_men.wav"},
-            {"type": "sentence", "id": 30, "chinese": "她喜欢喝茶。", 
-             "pinyin": "Tā xǐhuān hē chá.", "english": "She likes drinking tea", "audio": "women/30_women.wav"},
-        ]
-        
-        all_potential_items = words + sentences
+        all_potential_items = words
         
         # Filter to only include items whose audio files actually exist
         self.all_items = []
@@ -187,7 +153,7 @@ class PracticeSet:
     def get_progress(self):
         if not self.current_set:
             return "No set active"
-        return f"Item {self.current_index + 1} of {len(self.current_set)}"
+        return f"{self.current_index + 1} of {len(self.current_set)}"
     
     def get_audio_path(self, item):
         """Get the full path to the audio file for an item"""
@@ -256,41 +222,36 @@ class SimpleAudioVisualizerWithSAI:
         )
         
         # Progress indicator
-        progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
+        progress_text = f"{self.practice_set.get_progress()}"
         self.progress_text = self.ax_main.text(
             0.98, 0.98, progress_text, transform=self.ax_main.transAxes,
-            color='yellow', fontsize=12, verticalalignment='top',
+            color='yellow', fontsize=10, verticalalignment='top',
             horizontalalignment='right',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8)
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
         )
         
         # Control buttons
         from matplotlib.widgets import Button
         
-        self.ax_play_button = plt.axes([0.15, 0.08, 0.10, 0.05])
+        self.ax_play_button = plt.axes([0.20, 0.08, 0.10, 0.05])
         self.play_button = Button(self.ax_play_button, 'Play Audio', 
                                   color='lightcyan', hovercolor='cyan')
         self.play_button.on_clicked(self.play_reference_audio)
         
-        self.ax_rec_button = plt.axes([0.27, 0.08, 0.12, 0.05])
+        self.ax_rec_button = plt.axes([0.35, 0.08, 0.12, 0.05])
         self.rec_button = Button(self.ax_rec_button, 'Start Recording', 
                                  color='lightgreen', hovercolor='green')
         self.rec_button.on_clicked(self.toggle_recording)
         
-        self.ax_save_button = plt.axes([0.41, 0.08, 0.12, 0.05])
+        self.ax_save_button = plt.axes([0.53, 0.08, 0.12, 0.05])
         self.save_button = Button(self.ax_save_button, 'Save Recording', 
                                   color='lightblue', hovercolor='blue')
         self.save_button.on_clicked(self.save_recording)
         
-        self.ax_next_button = plt.axes([0.55, 0.08, 0.10, 0.05])
+        self.ax_next_button = plt.axes([0.70, 0.08, 0.10, 0.05])
         self.next_button = Button(self.ax_next_button, 'Next Item', 
                                   color='lightyellow', hovercolor='yellow')
         self.next_button.on_clicked(self.next_practice_item)
-        
-        self.ax_newset_button = plt.axes([0.67, 0.08, 0.10, 0.05])
-        self.newset_button = Button(self.ax_newset_button, 'New Set', 
-                                    color='lightcoral', hovercolor='red')
-        self.newset_button.on_clicked(self.generate_new_set)
         
         self.fig.patch.set_facecolor('#1a1a2e')
         self.ax_main.set_facecolor('#16213e')
@@ -383,7 +344,7 @@ class SimpleAudioVisualizerWithSAI:
                 playback_stream.stop_stream()
                 playback_stream.close()
                 
-            self.status_text.set_text('Audio playback complete')
+            self.status_text.set_text('Ready')
             self.status_text.set_color('lime')
             print(f"Finished playing: {audio_path}")
             
@@ -398,23 +359,24 @@ class SimpleAudioVisualizerWithSAI:
     
     def next_practice_item(self, event=None):
         """Move to next practice item"""
-        if len(self.practice_set.all_items) == 0:
-            self.status_text.set_text('No audio files available!')
-            self.status_text.set_color('red')
-            return
+        # Stop current reference audio
+        self.reference_audio_playing = False
+        time.sleep(0.1)  # Brief pause
         
         next_item = self.practice_set.next_item()
         if next_item:
             item_text = f"[{next_item['type'].upper()}] {next_item['chinese']}\n{next_item['pinyin']}\n{next_item['english']}"
             self.practice_text.set_text(item_text)
-            progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
-            self.progress_text.set_text(progress_text)
-            self.status_text.set_text('Ready for next item')
+            self.progress_text.set_text(f"{self.practice_set.get_progress()}")
+            self.status_text.set_text('Ready')
             self.status_text.set_color('lime')
-            print(f"\nNext item: {next_item['chinese']} ({next_item['pinyin']})")
+            
+            # Auto-play the new reference audio
+            threading.Timer(0.3, self.play_reference_audio).start()
         else:
-            self.status_text.set_text('Set completed! Generate new set')
+            self.status_text.set_text('✓ All items in current set completed')
             self.status_text.set_color('yellow')
+            print(f"Completed Set #{self.practice_set.set_number}")
     
     def generate_new_set(self, event=None):
         """Generate a new random practice set"""
@@ -428,7 +390,7 @@ class SimpleAudioVisualizerWithSAI:
         if current_item:
             item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item['english']}"
             self.practice_text.set_text(item_text)
-            progress_text = f"Set #{self.practice_set.set_number} | {self.practice_set.get_progress()}"
+            progress_text = f"{self.practice_set.get_progress()}"
             self.progress_text.set_text(progress_text)
             self.status_text.set_text('New set generated!')
             self.status_text.set_color('cyan')
