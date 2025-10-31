@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import librosa
-import random
 import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -26,24 +25,6 @@ class CorrectedPaperMethod:
         try:
             # Load audio - use higher sampling rate to avoid filter warnings
             y, sr = librosa.load(audio_path, sr=22050, duration=3.0)
-            # Random speed-up augmentation: up to +30% tempo (1.0 = original, 1.3 = 30% faster)
-            # We use librosa.effects.time_stretch where possible. For very short clips,
-            # fall back to a simple trimming-based speed-up to avoid crashes.
-            try:
-                speedup = random.uniform(1.0, 1.3)
-                if speedup > 1.0:
-                    # time_stretch shortens signal length and preserves pitch; it requires
-                    # a minimum number of samples for the STFT windows. Use a safe check.
-                    if len(y) > 2048:
-                        y = librosa.effects.time_stretch(y, rate=speedup)
-                    else:
-                        # Fallback for very short signals: approximate speed-up by truncating
-                        # the signal to a shorter length which simulates faster playback.
-                        new_len = max(1, int(len(y) / speedup))
-                        y = y[:new_len]
-            except Exception:
-                # If augmentation fails for any reason, continue with original audio
-                pass
             
             if len(y) < 0.5 * sr:
                 return None, sr
@@ -518,7 +499,7 @@ class CorrectedPaperMethod:
         return self.model, save_dir
 
 def main():
-    data_dir = ""
+    data_dir = r'C:\Users\maruk\Downloads\tone_perfect_all_mp3\tone_perfect'
     
     print("=== CORRECTED Paper Method ===")
     choice = input("Context size (1=fast, 2=medium, 3=slow): ").strip() or "1"
