@@ -14,7 +14,7 @@ from datetime import datetime
 MODULES_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(MODULES_DIR, "tone_detection_model", "tone_detection_model_20250928_113915")
 CONFIG_PATH = os.path.join(MODEL_DIR, "config.json")
-MODEL_FILE = os.path.join(MODEL_DIR, "tone_detection.keras")
+MODEL_FILE = os.path.join(MODEL_DIR, "tone_detection2.keras")
 
 class ToneClassifierTester:
     def __init__(self, model_dir=MODEL_FILE, config_path=CONFIG_PATH):
