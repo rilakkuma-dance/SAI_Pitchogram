@@ -1,0 +1,67 @@
+======================================================================
+MANDARIN TONE INTRODUCTION QUIZ WITH SAI - RESULTS
+======================================================================
+
+Session Start: 2025-10-27 09:52:12
+Session End: 2025-10-27 09:54:49
+Total Questions: 5
+Correct Answers: 2
+Accuracy: 40.0%
+Total Time: 46.06 seconds
+Average Time per Question: 9.21 seconds
+
+======================================================================
+
+Question 1/5
+----------------------------------------------------------------------
+Chinese:       中午
+Pinyin:        zhōngwǔ
+Correct Tone:  13
+Your Answer:   43
+Result:        ✗ INCORRECT
+Time Taken:    16.81 seconds
+Audio File:    women/11_women.wav
+
+Question 2/5
+----------------------------------------------------------------------
+Chinese:       雄
+Pinyin:        xióng
+Correct Tone:  2
+Your Answer:   3
+Result:        ✗ INCORRECT
+Time Taken:    3.83 seconds
+Audio File:    men/3_men.wav
+
+Question 3/5
+----------------------------------------------------------------------
+Chinese:       书店
+Pinyin:        shūdiàn
+Correct Tone:  14
+Your Answer:   14
+Result:        ✓ CORRECT
+Time Taken:    6.42 seconds
+Audio File:    women/9_women.wav
+
+Question 4/5
+----------------------------------------------------------------------
+Chinese:       熊猫
+Pinyin:        xióngmāo
+Correct Tone:  21
+Your Answer:   31
+Result:        ✗ INCORRECT
+Time Taken:    10.02 seconds
+Audio File:    men/8_men.wav
+
+Question 5/5
+----------------------------------------------------------------------
+Chinese:       医院
+Pinyin:        yīyuàn
+Correct Tone:  14
+Your Answer:   14
+Result:        ✓ CORRECT
+Time Taken:    8.98 seconds
+Audio File:    men/14_men.wav
+
+======================================================================
+END OF RESULTS
+======================================================================

@@ -1,0 +1,16 @@
+Timestamp: 20251006_110621
+Recording: 20251006_110621.wav
+Sample Rate: 16000 Hz
+Duration: 0.50 seconds
+
+--- Practice Item ---
+Item ID: 11
+Type: word
+Chinese: 中午
+Pinyin: zhōngwǔ
+English: noon
+Phonemes: tʂʊŋ u
+
+--- Session Info ---
+Progress: 1/5
+Voice Type: women

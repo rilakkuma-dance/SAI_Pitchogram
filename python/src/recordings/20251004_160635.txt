@@ -1,0 +1,9 @@
+Timestamp: 20251004_160635
+Recording: 20251004_160635.wav
+Item ID: 15
+Type: word
+Chinese: 游戏
+Pinyin: yóuxì
+English: game
+Set Number: 1
+Item Position: 1/5

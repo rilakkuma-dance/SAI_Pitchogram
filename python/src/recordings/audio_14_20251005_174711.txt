@@ -1,0 +1,20 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251005_174711
+Date/Time: 2025-10-05 17:47:11
+Duration: 1.57 seconds
+Sample Rate: 16000 Hz
+Audio File: audio_14_20251005_174711.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 14
+Type: WORD
+Chinese: 医院
+Pinyin: yīyuàn
+English: hospital
+Reference Audio: men/14_men.wav
+
+Practice Set: #1
+Progress: Item 1 of 5

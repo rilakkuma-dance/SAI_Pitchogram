@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pronunciation Feedback</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 8px;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .score-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px;
+            text-align: center;
+            margin-bottom: 8px;
+            backdrop-filter: blur(10px);
+            flex-shrink: 0;
+        }
+
+        .overall-score {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #00ff87 0%, #60efff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 3px;
+        }
+
+        .score-label {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            letter-spacing: 0.5px;
+        }
+
+        .feedback-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 10px;
+            margin-bottom: 8px;
+            backdrop-filter: blur(10px);
+            flex-shrink: 0;
+        }
+
+        .row-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .target-color { color: #60efff; }
+        .yours-color { color: #ffb347; }
+
+        .syllables-container {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .syllable-card {
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 8px;
+            min-width: 90px;
+            transition: transform 0.2s;
+        }
+
+        .syllable-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .character {
+            font-size: 1.6rem;
+            text-align: center;
+            margin-bottom: 5px;
+            color: #60efff;
+        }
+
+        .tone-visual {
+            height: 25px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tone-line {
+            stroke: #00ff87;
+            stroke-width: 2;
+            fill: none;
+            filter: drop-shadow(0 0 3px #00ff87);
+        }
+
+        .pinyin {
+            text-align: center;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #60efff;
+        }
+
+        .phonemes {
+            display: flex;
+            gap: 2px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .phoneme {
+            padding: 3px 5px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .perfect { background: #00ff87; color: #000; }
+        .good { background: #4ade80; color: #000; }
+        .close { background: #fbbf24; color: #000; }
+        .poor { background: #fb923c; color: #000; }
+        .wrong { background: #ef4444; color: #fff; }
+        .missing { background: #6b7280; color: #fff; opacity: 0.5; }
+
+        .confidence {
+            text-align: center;
+            margin-top: 5px;
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+
+        .confidence-value {
+            display: inline-block;
+            background: rgba(0, 255, 135, 0.2);
+            padding: 2px 6px;
+            border-radius: 8px;
+            margin-top: 2px;
+        }
+
+        .vs-separator {
+            text-align: center;
+            font-size: 1.2rem;
+            margin: 6px 0;
+            opacity: 0.3;
+            flex-shrink: 0;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .status {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            font-size: 0.75rem;
+            border: 2px solid #666;
+        }
+
+        .status.active {
+            border-color: #00ff87;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Overall Score -->
+        <div class="score-card">
+            <div class="overall-score" id="overallScore">75%</div>
+            <div class="score-label">OVERALL PRONUNCIATION SCORE</div>
+        </div>
+
+        <!-- Target Pronunciation -->
+        <div class="feedback-section">
+            <div class="row-label target-color">
+                🎯 TARGET: <span id="targetWord">谢谢 (xièxiè)</span>
+            </div>
+            <div class="syllables-container" id="targetSyllables">
+                <!-- Target syllables will be generated here -->
+            </div>
+        </div>
+
+        <div class="vs-separator">↓</div>
+
+        <!-- Your Pronunciation -->
+        <div class="feedback-section">
+            <div class="row-label yours-color">
+                🗣️ YOUR PRONUNCIATION:
+            </div>
+            <div class="syllables-container" id="yourSyllables">
+                <!-- Your syllables will be generated here -->
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot perfect"></div>
+                <span>Perfect</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot good"></div>
+                <span>Good</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot close"></div>
+                <span>Close</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot poor"></div>
+                <span>Poor</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot wrong"></div>
+                <span>Wrong</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot missing"></div>
+                <span>Missing</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const toneShapes = {
+            1: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 15 L 90 15"/></svg>',
+            2: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 40 Q 50 25 90 10"/></svg>',
+            3: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 25 Q 25 40 50 45 Q 75 40 90 15"/></svg>',
+            4: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 10 L 90 45"/></svg>',
+            5: '<svg width="60" height="25" viewBox="0 0 100 50"><path class="tone-line" d="M 10 25 L 90 25" stroke-dasharray="5,5"/></svg>'
+        };
+
+        // Sample data structure
+        const sampleData = {
+            overall_score: 0.75,
+            target: [
+                {
+                    character: '谢',
+                    pinyin: 'xie',
+                    tone: 4,
+                    phonemes: ['ɕ', 'i', 'ɛ'],
+                    phoneme_scores: ['perfect', 'perfect', 'perfect']
+                },
+                {
+                    character: '谢',
+                    pinyin: 'xie',
+                    tone: 4,
+                    phonemes: ['ɕ', 'i', 'ɛ'],
+                    phoneme_scores: ['perfect', 'perfect', 'perfect']
+                }
+            ],
+            yours: [
+                {
+                    character: '谢',
+                    pinyin: 'xie',
+                    tone: 4,
+                    confidence: 1.0,
+                    phonemes: ['ɕ', 'i', 's'],
+                    phoneme_scores: ['perfect', 'good', 'wrong']
+                },
+                {
+                    character: '?',
+                    pinyin: '?',
+                    tone: null,
+                    confidence: 0,
+                    phonemes: ['.', 'i', 'ɛ'],
+                    phoneme_scores: ['missing', 'good', 'perfect']
+                }
+            ]
+        };
+
+        function createSyllableCard(data, isTarget = true) {
+            const card = document.createElement('div');
+            card.className = 'syllable-card';
+            
+            let content = `
+                <div class="character">${data.character}</div>
+            `;
+            
+            // Add tone visualization
+            if (data.tone) {
+                content += `
+                    <div class="tone-visual">
+                        ${toneShapes[data.tone] || ''}
+                    </div>
+                `;
+            } else {
+                content += `<div class="tone-visual" style="opacity: 0.3;">❓</div>`;
+            }
+            
+            // Add pinyin with tone number
+            content += `
+                <div class="pinyin">${data.pinyin}${data.tone || '?'}</div>
+            `;
+            
+            // Add phonemes with color coding
+            content += `<div class="phonemes">`;
+            data.phonemes.forEach((phoneme, idx) => {
+                const scoreClass = data.phoneme_scores[idx] || 'perfect';
+                content += `<span class="phoneme ${scoreClass}">${phoneme}</span>`;
+            });
+            content += `</div>`;
+            
+            // Add confidence for user pronunciation
+            if (!isTarget && data.confidence !== undefined) {
+                content += `
+                    <div class="confidence">
+                        Confidence: <span class="confidence-value">${(data.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                `;
+            }
+            
+            card.innerHTML = content;
+            return card;
+        }
+
+        function renderFeedback(data) {
+            // Update overall score
+            document.getElementById('overallScore').textContent = `${Math.round(data.overall_score * 100)}%`;
+            
+            // Render target syllables
+            const targetContainer = document.getElementById('targetSyllables');
+            targetContainer.innerHTML = '';
+            data.target.forEach(syllable => {
+                targetContainer.appendChild(createSyllableCard(syllable, true));
+            });
+            
+            // Render user syllables
+            const yourContainer = document.getElementById('yourSyllables');
+            yourContainer.innerHTML = '';
+            data.yours.forEach(syllable => {
+                yourContainer.appendChild(createSyllableCard(syllable, false));
+            });
+        }
+
+        // Initialize with sample data
+        renderFeedback(sampleData);
+
+        // Function to update feedback from Python
+        function updateFeedback(data) {
+            renderFeedback(data);
+        }
+    </script>
+</body>
+</html>

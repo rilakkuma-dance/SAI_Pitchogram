@@ -1,0 +1,50 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251004_171422
+Date/Time: 2025-10-04 17:14:22
+Duration: 1.28 seconds
+Sample Rate: 16000 Hz
+Audio File: audioonly_7_20251004_171422.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 7
+Type: WORD
+Chinese: 街道
+Pinyin: jiēdào
+English: street
+Reference Audio: women/7_women.wav
+
+Practice Set: #1
+Progress: Item 2 of 5
+
+
+Character: 接
+  Pinyin: jie
+  Tone: T1
+  Confidence: 1.000
+  Time: 0.60s - 0.82s
+  Method: pypinyin_lookup
+  Alternative pronunciations:
+    jie1 (T1)
+    xie2 (T2)
+    sha4 (T4)
+    cha1 (T1)
+
+Character: 倒
+  Pinyin: dao
+  Tone: T4
+  Confidence: 1.000
+  Time: 0.82s - 1.26s
+  Method: pypinyin_lookup
+  Alternative pronunciations:
+    dao4 (T4)
+    dao3 (T3)
+
+SUMMARY:
+Characters: 接倒
+Pinyin: jie dao
+Tones: 1 4
+Full pinyin: jie1 dao4
+Success rate: 2/2 characters

@@ -1,0 +1,9 @@
+Timestamp: 20251004_171800
+Recording: spectrogram_20251004_171800.wav
+Item ID: 16
+Type: word
+Chinese: 她
+Pinyin: tā
+English: she
+Set Number: 1
+Item Position: 1/5

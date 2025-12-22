@@ -1,0 +1,17 @@
+Timestamp: 20251004_171816
+Recording: spectrogram_20251004_171816.wav
+Item ID: 4
+Type: word
+Chinese: 去
+Pinyin: qù
+English: to go
+Set Number: 1
+Item Position: 2/5
+
+Prediction: T4
+Confidence: 0.986
+All probabilities:
+  T1: 0.001
+  T2: 0.001
+  T3: 0.012
+  T4: 0.986

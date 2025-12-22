@@ -1,0 +1,16 @@
+Timestamp: 20251004_143502
+Recording: 20251004_143502.wav
+Sample Rate: 16000 Hz
+Duration: 0.50 seconds
+
+--- Practice Item ---
+Item ID: 4
+Type: word
+Chinese: 去
+Pinyin: qù
+English: to go
+Phonemes: tɕʰy
+
+--- Session Info ---
+Progress: 1/5
+Voice Type: women

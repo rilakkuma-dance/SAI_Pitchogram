@@ -1,0 +1,20 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251005_174930
+Date/Time: 2025-10-05 17:49:30
+Duration: 1.89 seconds
+Sample Rate: 16000 Hz
+Audio File: audio_17_20251005_174930.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 17
+Type: SENTENCE
+Chinese: 我喜欢吃苹果。
+Pinyin: Wǒ xǐhuān chī píngguǒ.
+English: I like eating apples
+Reference Audio: men/17_men.wav
+
+Practice Set: #1
+Progress: Item 4 of 5

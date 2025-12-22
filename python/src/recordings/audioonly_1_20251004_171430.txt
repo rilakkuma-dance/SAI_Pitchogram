@@ -1,0 +1,29 @@
+Recording Metadata
+==================================================
+
+Timestamp: 20251004_171430
+Date/Time: 2025-10-04 17:14:30
+Duration: 1.22 seconds
+Sample Rate: 16000 Hz
+Audio File: audioonly_1_20251004_171430.wav
+
+Practice Item Details
+--------------------------------------------------
+Item ID: 1
+Type: WORD
+Chinese: 书
+Pinyin: shū
+English: book
+Reference Audio: men/1_men.wav
+
+Practice Set: #1
+Progress: Item 3 of 5
+
+Prediction: T2
+Confidence: 0.635
+All probabilities:
+  T1: 0.000
+  T2: 0.635
+  T3: 0.041
+  T4: 0.323
+

@@ -1,0 +1,9 @@
+Timestamp: 20251005_175520
+Recording: mel_20251005_175520.wav
+Item ID: 19
+Type: sentence
+Chinese: 熊猫在公园里玩。
+Pinyin: Xióngmāo zài gōngyuán lǐ wán.
+English: The panda plays in the park
+Set Number: 1
+Item Position: 4/5

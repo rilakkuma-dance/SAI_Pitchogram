@@ -218,7 +218,7 @@ class TonePlayer:
             
             print(f"✓ Displayed image for Tone {tone_num}: {Path(image_path).name}")
         except Exception as e:
-            print(f"⚠️ Error loading image for Tone {tone_num}: {e}")
+            print(f"Error loading image for Tone {tone_num}: {e}")
             import traceback
             traceback.print_exc()
             
@@ -266,7 +266,7 @@ class TonePlayer:
                 print(f"✓ Playback complete\n")
                 
             except Exception as e:
-                print(f"❌ Error playing audio: {e}\n")
+                print(f"Error playing audio: {e}\n")
             
             self.is_playing = False
         
@@ -310,11 +310,11 @@ class TonePlayer:
         
         if next_script:
             try:
-                print(f"🚀 Launching: {next_script.name}\n")
+                print(f"Launching: {next_script.name}\n")
                 import subprocess
                 subprocess.Popen([sys.executable, str(next_script)])
             except Exception as e:
-                print(f"❌ Error launching script: {e}")
+                print(f"Error launching script: {e}")
         else:
             print("\n⚠️ Could not find understanding_tone_audio.py")
             print("   Searched in:")
