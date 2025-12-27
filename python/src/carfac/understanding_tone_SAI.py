@@ -51,6 +51,15 @@ class AudioProcessor:
             self.use_carfac = False
             self.n_channels = 200
 
+        if self.use_carfac:
+            print("\n" + "="*40)
+            print("🚀 SUCCESS: Running with JAX/CARFAC acceleration!")
+            print("="*40 + "\n")
+        else:
+            print("\n" + "="*40)
+            print("⚠️ NOTICE: Running in Fallback Mode (Slow/No JAX)")
+            print("="*40 + "\n")
+
     def process_chunk(self, audio_chunk):
         if self.use_carfac:
             try:
@@ -129,9 +138,9 @@ class ToneIntroductionQuizWithSAI:
             script_dir = Path(__file__).parent.resolve()
             
             possible_paths = [
-                script_dir / 'reference',
-                script_dir.parent / 'reference',
-                script_dir / 'carfac' / 'reference',
+                script_dir / 'carfac',
+                script_dir.parent / 'carfac',
+                script_dir / 'carfac',
             ]
             
             audio_base_path = None
@@ -143,7 +152,7 @@ class ToneIntroductionQuizWithSAI:
             
             if audio_base_path is None:
                 print(f"⚠️ Warning: Could not find reference audio folder!")
-                audio_base_path = script_dir / 'reference'
+                audio_base_path = script_dir / 'mandarin_audio'
         
         self.audio_base_path = Path(audio_base_path)
         self.sample_rate = 16000
@@ -175,23 +184,24 @@ class ToneIntroductionQuizWithSAI:
         
         # All words from VocabList
         self.vocab_items = [
-            {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "men/1_men.wav"},
-            {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "women/2_women.wav"},
-            {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "men/3_men.wav"},
-            {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "men/4_men.wav"},
-            {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "women/6_women.wav"},
-            {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "women/7_women.wav"},
-            {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "men/8_men.wav"},
-            {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "women/9_women.wav"},
-            {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "men/10_men.wav"},
-            {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "women/11_women.wav"},
-            {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "men/12_men.wav"},
-            {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "women/13_women.wav"},
-            {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "men/14_men.wav"},
-            {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "women/15_women.wav"},
-            {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "men/16_men.wav"},
-        ]
-        
+                    {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "mandarin_audio/01_书_1.mp3"},
+                    {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "mandarin_audio/02_女人_32.mp3"},
+                    {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "mandarin_audio/03_雄_2.mp3"},
+                    {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "mandarin_audio/04_去_4.mp3"},
+                    {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "mandarin_audio/06_喜欢_31.mp3"},
+                    {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "mandarin_audio/07_街道_14.mp3"},
+                    {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "mandarin_audio/08_熊猫_21.mp3"},
+                    {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "mandarin_audio/09_书店_14.mp3"},
+                    {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "mandarin_audio/10_去年_42.mp3"},
+                    {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "mandarin_audio/11_中午_13.mp3"},
+                    # Ensure the filename below matches your disk exactly (watch for spaces)
+                    {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "mandarin_audio/12_老师_31.mp3"},
+                    {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "mandarin_audio/13_学校_24.mp3"},
+                    {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "mandarin_audio/14_医院_14.mp3"},
+                    {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "mandarin_audio/15_游戏_24.mp3"},
+                    {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "mandarin_audio/16_她_1.mp3"},
+                ]
+                
         self.current_item = None
         self.answered = False
         self.question_count = 0
@@ -376,7 +386,7 @@ class ToneIntroductionQuizWithSAI:
         # Update display
         current_max = np.max(self.vis.img) if self.vis.img.size else 1
         self.im_sai.set_data(self.vis.img)
-        self.im_sai.set_clim(vmin=0, vmax=max(1, min(255, current_max * 1.3)))
+        self.im_sai.set_clim(vmin=0, vmax=max(1, min(255, current_max * 0.6)))
         self.fig.canvas.draw_idle()
     
     def play_audio(self, event):
@@ -517,7 +527,7 @@ class ToneIntroductionQuizWithSAI:
         """Save all results to a text file"""
         try:
             script_dir = Path(__file__).parent
-            results_dir = script_dir / 'tone_quiz_results'
+            results_dir = script_dir / 'result'
             results_dir.mkdir(exist_ok=True)
             
             timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')

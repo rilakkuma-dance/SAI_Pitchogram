@@ -1,440 +1,296 @@
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from matplotlib.widgets import Button, TextBox
-import subprocess
-import sys
 import numpy as np
-from pathlib import Path
+import librosa
 import sounddevice as sd
-import soundfile as sf
 import threading
 import random
-import os
-from datetime import datetime
 import time
-import librosa  # <--- Added librosa import
+from pathlib import Path
+from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog
+import sys
+
+# Try to import pypinyin
+try:
+    from pypinyin import pinyin, Style
+    HAS_PYPINYIN = True
+except ImportError:
+    HAS_PYPINYIN = False
 
 class ToneSpectrogramQuiz:
-    def __init__(self, audio_base_path=None):
-        if audio_base_path is None:
-            script_dir = Path(__file__).parent.resolve()
-            possible_paths = [
-                script_dir / 'reference',
-                script_dir.parent / 'reference',
-                script_dir / 'carfac' / 'reference',
-            ]
-            
-            audio_base_path = None
-            for path in possible_paths:
-                if path.exists():
-                    audio_base_path = path
-                    print(f"✓ Found audio path: {audio_base_path}")
-                    break
-            
-            if audio_base_path is None:
-                print(f"⚠️ Warning: Could not find reference audio folder!")
-                audio_base_path = script_dir / 'reference'
+    def __init__(self):
+        # 1. FONT CONFIGURATION
+        plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial']
+        plt.rcParams['axes.unicode_minus'] = False 
         
-        self.audio_base_path = Path(audio_base_path)
-        self.sample_rate = 16000
+        # 2. PATH FINDING
+        self.audio_base_path = self._find_audio_folder()
         
-        # Vocabulary items
-        self.vocab_items = [
-            {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "men/1_men.wav"},
-            {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "women/2_women.wav"},
-            {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "men/3_men.wav"},
-            {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "men/4_men.wav"},
-            {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "women/6_women.wav"},
-            {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "women/7_women.wav"},
-            {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "men/8_men.wav"},
-            {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "women/9_women.wav"},
-            {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "men/10_men.wav"},
-            {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "women/11_women.wav"},
-            {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "men/12_men.wav"},
-            {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "women/13_women.wav"},
-            {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "men/14_men.wav"},
-            {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "women/15_women.wav"},
-            {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "men/16_men.wav"},
-        ]
+        if not self.audio_base_path:
+            print("❌ No audio folder selected. Exiting.")
+            return
+
+        print(f"✅ Using audio from: {self.audio_base_path}")
         
-        if not self.audio_base_path.exists():
-            print(f"⚠️ Warning: Audio path does not exist: {self.audio_base_path}")
-        else:
-            print(f"✓ Using audio path: {self.audio_base_path}")
-        
+        self.vocab_items = self._scan_audio_folder()
+
+        if not self.vocab_items:
+            print("⚠️ Folder found, but no .mp3 files inside!")
+            self.vocab_items = [{"id":0, "chinese":"Error", "pinyin":"-", "tone":"0", "audio": None}]
+
+        # 3. GAME STATE
         self.current_item = None
-        self.current_spectrogram = None
+        self.current_audio_y = None  # Store audio data for playback
+        self.current_audio_sr = None # Store sample rate
+        
         self.answered = False
         self.question_count = 0
         self.max_questions = 5
-        
         self.question_start_time = None
-        self.question_elapsed_time = 0
+        self.timer_started = False
         self.spectrogram_shown = False
-
-        # Store already used words
         self.used_words = set()
-        
         self.results = []
         self.session_start_time = datetime.now()
-        
-        self.fig = plt.figure(figsize=(10, 8))
+
+        # 4. SETUP UI
+        self.fig = plt.figure(figsize=(8, 9)) 
         self.fig.patch.set_facecolor('white')
-        
         self._setup_interface()
         self._select_random_item()
-        
+
+    def _find_audio_folder(self):
+        script_dir = Path(__file__).parent.resolve()
+        potential_path = script_dir / 'mandarin_audio'
+        if potential_path.exists(): return potential_path
+        potential_path = script_dir.parent / 'mandarin_audio'
+        if potential_path.exists(): return potential_path
+
+        print("⚠️ Could not auto-detect 'mandarin_audio' folder.")
+        root = tk.Tk()
+        root.withdraw() 
+        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio' folder")
+        root.destroy()
+        if folder_selected: return Path(folder_selected)
+        return None
+
+    def _scan_audio_folder(self):
+        items = []
+        files = sorted(list(self.audio_base_path.glob("*.mp3")))
+        for f in files:
+            try:
+                parts = f.stem.split('_') 
+                if len(parts) >= 3:
+                    item_id = int(parts[0])
+                    word = parts[1]
+                    tone = parts[2]
+                    
+                    if HAS_PYPINYIN:
+                        py_list = pinyin(word, style=Style.TONE)
+                        pinyin_text = "".join([x[0] for x in py_list])
+                    else:
+                        pinyin_text = "---"
+
+                    items.append({
+                        "id": item_id, "chinese": word, "pinyin": pinyin_text,
+                        "tone": tone, "audio": f.name
+                    })
+            except ValueError:
+                continue
+        return items
+
     def _setup_interface(self):
-        # Create grid layout
-        gs = self.fig.add_gridspec(3, 1, height_ratios=[1, 3, 1], hspace=0.3)
+        # Spectrogram Area
+        self.ax_spec = self.fig.add_axes([0.15, 0.55, 0.7, 0.35])
+        self.ax_spec.set_title("Mel Spectrogram", fontsize=10)
+        self.ax_spec.set_xlabel("Time")
+        self.ax_spec.set_ylabel("Frequency (Hz)")
         
-        # Top section: Instructions
-        ax_top = self.fig.add_subplot(gs[0])
-        ax_top.axis('off')
-        ax_top.text(0.5, 0.8, 'Learn Tones from Spectrogram', 
-                    fontsize=20, ha='center', va='center', weight='bold')
-        ax_top.text(0.5, 0.4, 'Look at the spectrogram pattern and identify the tones', 
-                    fontsize=12, ha='center', va='center', color='#666666')
+        self.im_spec = self.ax_spec.imshow(np.zeros((128, 100)), aspect='auto', origin='lower', cmap='magma')
+        self.ax_spec.axis('off') 
+
+        # Text Areas
+        self.ax_ui = self.fig.add_axes([0.1, 0.0, 0.8, 0.5])
+        self.ax_ui.axis('off')
         
-        # Progress counter
-        self.progress_text = ax_top.text(0.95, 0.9, '', 
-                    fontsize=12, ha='right', va='top', weight='bold', color='#7f8c8d')
+        self.progress_text = self.ax_ui.text(0.5, 0.95, '', fontsize=12, ha='center', color='#7f8c8d')
         
-        # Middle section: Spectrogram display
-        self.ax_spec = self.fig.add_subplot(gs[1])
-        self.ax_spec.set_facecolor('#1a1a2e')
+        # Status text (will show filename later)
+        self.status_text = self.ax_ui.text(0.5, 0.85, 'Click "Show Spectrogram" to start', fontsize=11, ha='center', color='#7f8c8d')
         
-        # Initialize with empty spectrogram
-        empty_spec = np.zeros((128, 200))
-        self.im_spec = self.ax_spec.imshow(
-            empty_spec, aspect='auto', origin='lower',
-            interpolation='bilinear', cmap='magma', vmin=-80, vmax=0
-        )
-        self.ax_spec.set_title('Spectrogram (Click "Show Spectrogram" to reveal)', 
-                              color='cyan', fontsize=14, weight='bold')
-        self.ax_spec.set_xlabel('Time', color='white', fontsize=10)
-        self.ax_spec.set_ylabel('Frequency', color='white', fontsize=10)
-        self.ax_spec.tick_params(colors='white')
+        self.ax_ui.text(0.5, 0.60, 'Type tone numbers (e.g. 14)', fontsize=11, ha='center', color='#666666')
+
+        # Input Box
+        ax_input = plt.axes([0.3, 0.22, 0.4, 0.06])
+        self.text_input = TextBox(ax_input, '', color='white', hovercolor='#f9f9f9')
         
-        # Bottom section: Controls
-        ax_bottom = self.fig.add_subplot(gs[2])
-        ax_bottom.axis('off')
-        
-        # Status text
-        self.status_text = ax_bottom.text(
-            0.5, 0.85, 'Click "Show Spectrogram" to see the tone pattern',
-            fontsize=11, ha='center', va='center', color='#7f8c8d',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8)
-        )
-        
-        # Instruction
-        ax_bottom.text(0.5, 0.60, 'Type the correct tones (e.g., "14" for tones 1+4)', 
-                       fontsize=10, ha='center', va='center', color='#666666')
-        
-        # Text input box
-        from matplotlib.widgets import TextBox
-        ax_input = plt.axes([0.3, 0.1, 0.4, 0.05])
-        self.text_input = TextBox(ax_input, '', initial='', 
-                                  color='white', hovercolor='#f9f9f9')
-        
-        # Answer and feedback
-        self.answer_text = ax_bottom.text(0.5, 0.15, '', 
-                    fontsize=13, ha='center', va='center', weight='bold', color='#34495e')
-        
-        self.feedback_text = ax_bottom.text(0.5, 0.03, '', 
-                    fontsize=16, ha='center', va='center', weight='bold')
-        
+        # Feedback Text
+        self.answer_text = self.ax_ui.text(0.5, 0.30, '', fontsize=14, ha='center', weight='bold', color='#34495e')
+        self.feedback_text = self.ax_ui.text(0.5, 0.20, '', fontsize=16, ha='center', weight='bold')
+
         # Buttons
-        from matplotlib.widgets import Button
-        
-        ax_show = plt.axes([0.20, 0.02, 0.18, 0.05])
-        self.btn_show = Button(ax_show, 'Show Spectrogram', color='#5B5FED', hovercolor='#4B4FDD')
+        self.btn_show = Button(plt.axes([0.30, 0.40, 0.4, 0.07]), 'Show Spectrogram', color='#9b59b6', hovercolor='#8e44ad')
         self.btn_show.label.set_color('white')
-        self.btn_show.on_clicked(self.show_spectrogram)
-        
-        ax_check = plt.axes([0.41, 0.02, 0.18, 0.05])
-        self.btn_check = Button(ax_check, 'Check Answer', color='#3498db', hovercolor='#2980b9')
+        self.btn_show.on_clicked(self.show_spectrogram_action)
+
+        self.btn_check = Button(plt.axes([0.15, 0.02, 0.3, 0.05]), 'Check', color='#3498db', hovercolor='#2980b9')
         self.btn_check.label.set_color('white')
         self.btn_check.on_clicked(self.check_answer_button)
-        
-        ax_next = plt.axes([0.62, 0.02, 0.18, 0.05])
-        self.btn_next = Button(ax_next, 'Next Word', color='#27ae60', hovercolor='#229954')
+
+        self.btn_next = Button(plt.axes([0.55, 0.02, 0.3, 0.05]), 'Next', color='#27ae60', hovercolor='#229954')
         self.btn_next.label.set_color('white')
         self.btn_next.on_clicked(self.next_word)
-        
-        self._update_progress()
-        
-    def _update_progress(self):
-        self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
-        self.fig.canvas.draw_idle()
-        
+
     def _select_random_item(self):
-        # added this to prevent duplication of words
-        random_item = random.choice(self.vocab_items)
-        while random_item['id'] in self.used_words:
-            random_item = random.choice(self.vocab_items)
-        self.current_item = random_item
-        self.used_words.add(random_item['id'])
-        self.current_spectrogram = None
+        available = [i for i in self.vocab_items if i['id'] not in self.used_words]
+        if not available:
+            self.used_words = set()
+            available = self.vocab_items
+            
+        self.current_item = random.choice(available)
+        self.used_words.add(self.current_item['id'])
+        
         self.answered = False
+        self.timer_started = False
         self.spectrogram_shown = False
         self.question_start_time = None
+        self.current_audio_y = None
         
-        # Clear display
-        empty_spec = np.zeros((128, 200))
-        self.im_spec.set_data(empty_spec)
-        self.ax_spec.set_title('Spectrogram (Click "Show Spectrogram" to reveal)', 
-                              color='cyan', fontsize=14, weight='bold')
-        
-        self.status_text.set_text('Click "Show Spectrogram" to see the tone pattern')
-        self.status_text.set_color('#7f8c8d')
+        # Clear UI
+        self.text_input.set_val('')
         self.answer_text.set_text('')
         self.feedback_text.set_text('')
-        self.text_input.set_val('')
+        self.ax_spec.axis('off')
+        self.im_spec.set_data(np.zeros((128, 10))) 
         
+        self.status_text.set_text('Click "Show Spectrogram" to reveal')
+        self.status_text.set_color('#7f8c8d')
+        self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
         self.fig.canvas.draw_idle()
-        self._update_progress()
-        
-        print(f"\n{'='*60}")
-        print(f"NEW WORD (Question {self.question_count + 1}/{self.max_questions})")
-        print(f"Pinyin: {self.current_item['pinyin']}")
-        print(f"Correct tone: {self.current_item['tone']}")
-        print(f"{'='*60}")
-        
-    def show_spectrogram(self, event=None):
-        """Load and display the spectrogram using Librosa"""
-        if self.spectrogram_shown:
-            return
-            
-        audio_path = self.audio_base_path / self.current_item['audio']
-        
-        if not audio_path.exists():
-            self.status_text.set_text(f'⚠️ Audio file not found')
-            self.status_text.set_color('red')
-            print(f"⚠️ Audio file not found: {audio_path}")
-            return
+
+    def show_spectrogram_action(self, event):
+        if self.spectrogram_shown or not self.current_item: return
         
         try:
-            # 1. Load Audio with Librosa (handles resampling automatically)
-            # y = audio time series, sr = sampling rate
-            y, sr = librosa.load(str(audio_path), sr=self.sample_rate)
+            # Load Audio (and store it for playback later)
+            fpath = self.audio_base_path / self.current_item['audio']
             
-            # 2. Generate Mel Spectrogram (Linear Power)
-            # This matches your previous settings: n_fft=512, hop_length=128, n_mels=128
-            mel_spectrogram = librosa.feature.melspectrogram(
-                y=y, 
-                sr=sr, 
-                n_fft=512, 
-                hop_length=128, 
-                n_mels=128,
-                fmax=8000  # Nyquist frequency for 16kHz
-            )
+            # Load with librosa
+            self.current_audio_y, self.current_audio_sr = librosa.load(str(fpath), sr=None)
             
-            # 3. Convert to Log Scale (Decibels)
-            # This replaces the custom "10 * np.log10" logic
-            log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
+            # Generate Mel Spectrogram
+            mel_spec = librosa.feature.melspectrogram(y=self.current_audio_y, sr=self.current_audio_sr, n_mels=128, fmax=8000)
+            log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
             
-            self.current_spectrogram = log_mel_spectrogram
+            # Update Plot
+            self.im_spec.set_data(log_mel_spec)
+            self.im_spec.set_clim(vmin=log_mel_spec.min(), vmax=log_mel_spec.max())
+            self.im_spec.set_extent([0, log_mel_spec.shape[1], 0, 8000]) 
+            self.ax_spec.axis('on')
+            self.ax_spec.set_aspect('auto')
             
-            # Display spectrogram
-            self.im_spec.set_data(self.current_spectrogram)
-            self.im_spec.set_clim(vmin=np.min(self.current_spectrogram), 
-                                  vmax=np.max(self.current_spectrogram))
+            # Start Timer
+            self.question_start_time = time.time()
+            self.timer_started = True
+            self.spectrogram_shown = True
             
-            # Start timer
-            if not self.spectrogram_shown:
-                self.question_start_time = time.time()
-                self.spectrogram_shown = True
-            
-            self.status_text.set_text('Study the pattern and identify the tones')
+            self.status_text.set_text('Study the pattern and guess the tones')
             self.status_text.set_color('#27ae60')
-            
             self.fig.canvas.draw_idle()
-            
-            print(f"✓ Spectrogram displayed (via Librosa), timer started")
             
         except Exception as e:
-            self.status_text.set_text(f'❌ Error loading spectrogram')
-            self.status_text.set_color('red')
-            print(f"❌ Error: {e}")
-    
+            print(f"Error loading spectrogram: {e}")
+            self.status_text.set_text("Error loading audio file")
+
     def check_answer_button(self, event):
-        text = self.text_input.text
-        if not text.strip():
-            self.status_text.set_text('⚠️ Please enter an answer first')
-            self.status_text.set_color('orange')
-            self.fig.canvas.draw_idle()
-            return
-        
         if not self.spectrogram_shown:
-            self.status_text.set_text('⚠️ Please view the spectrogram first')
-            self.status_text.set_color('orange')
+            self.status_text.set_text('⚠️ Click Show Spectrogram first!')
             self.fig.canvas.draw_idle()
             return
-        
-        self.check_answer(text)
-    
-    def check_answer(self, text):
-        if not self.current_item or self.answered:
-            return
-        
-        if self.question_start_time is not None:
-            self.question_elapsed_time = time.time() - self.question_start_time
-        else:
-            self.question_elapsed_time = 0
-        
-        user_answer = text.strip().replace(' ', '').replace(',', '').replace('-', '')
-        
-        if not user_answer:
-            return
-        
-        correct_answer = self.current_item['tone'].replace(',', '').replace('-', '')
-        
-        print(f"\n{'─'*60}")
-        print(f"ANSWER: User='{user_answer}' | Correct='{correct_answer}'")
-        print(f"Time: {self.question_elapsed_time:.2f}s")
-        print(f"{'─'*60}\n")
-        
+            
+        user_input = self.text_input.text.strip().replace(' ', '')
+        if not user_input or self.answered: return
+
+        elapsed = time.time() - self.question_start_time
+        correct_tone = self.current_item['tone']
+        is_correct = (user_input == correct_tone)
         self.answered = True
-        is_correct = (user_answer == correct_answer)
-        
-        result = {
-            'question_number': self.question_count + 1,
-            'chinese': self.current_item['chinese'],
+
+        self.results.append({
+            'word': self.current_item['chinese'],
             'pinyin': self.current_item['pinyin'],
-            'correct_tone': correct_answer,
-            'user_answer': user_answer,
-            'is_correct': is_correct,
-            'time_seconds': round(self.question_elapsed_time, 2),
-            'audio_file': self.current_item['audio']
-        }
-        self.results.append(result)
-        
-        self.answer_text.set_text(f"Your answer: {user_answer}")
+            'tone': correct_tone,
+            'user': user_input,
+            'correct': is_correct,
+            'time': elapsed,
+            'file': self.current_item['audio']
+        })
+
+        self.answer_text.set_text(f"Your answer: {user_input}")
         
         if is_correct:
             self.feedback_text.set_text('✓ CORRECT!')
             self.feedback_text.set_color('#27ae60')
-            self.status_text.set_text(f'Correct! ({self.current_item["pinyin"]})')
-            self.status_text.set_color('#27ae60')
-            print("✓ CORRECT!")
         else:
-            self.feedback_text.set_text(f'✗ INCORRECT (Correct: {correct_answer})')
+            self.feedback_text.set_text(f'✗ Wrong (Correct: {correct_tone})')
             self.feedback_text.set_color('#e74c3c')
-            self.status_text.set_text(f'Incorrect - Correct: {correct_answer} ({self.current_item["pinyin"]})')
-            self.status_text.set_color('#e74c3c')
-            print(f"✗ INCORRECT!")
-        
+            
+        # 1. Show Text Info
+        file_name = self.current_item['audio']
+        word_info = f"{self.current_item['chinese']} - {self.current_item['pinyin']}"
+        self.status_text.set_text(f"{word_info}\nFile: {file_name}\n(Playing Audio...)")
+        self.status_text.set_color('black')
         self.fig.canvas.draw_idle()
-    
+        
+        # 2. Play Audio Feedback automatically
+        if self.current_audio_y is not None:
+            threading.Thread(target=lambda: sd.play(self.current_audio_y, self.current_audio_sr), daemon=True).start()
+
+    def _save_results(self):
+        """Saves results to 'result' folder with same format as audio quiz"""
+        result_dir = Path(__file__).parent / 'result'
+        result_dir.mkdir(exist_ok=True)
+        
+        timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
+        filename = f"spectrogram_quiz_results_{timestamp}.txt"
+        save_path = result_dir / filename
+        
+        correct_count = sum(1 for r in self.results if r['correct'])
+        total = len(self.results)
+        
+        with open(save_path, 'w', encoding='utf-8') as f:
+            f.write("SPECTROGRAM TONE QUIZ RESULTS\n")
+            f.write("=============================\n")
+            f.write(f"Date: {self.session_start_time}\n")
+            f.write(f"Score: {correct_count}/{total}\n\n")
+            
+            for idx, r in enumerate(self.results):
+                f.write(f"Q{idx+1}: {r['word']} ({r['pinyin']})\n")
+                f.write(f"   Audio File: {r['file']}\n")
+                f.write(f"   Correct Tone: {r['tone']} | Your Answer: {r['user']}\n")
+                f.write(f"   Result: {'CORRECT' if r['correct'] else 'WRONG'}\n")
+                f.write(f"   Time: {r['time']:.2f}s\n")
+                f.write("-" * 30 + "\n")
+                
+        print(f"\n✅ Results saved to: {save_path}")
+
     def next_word(self, event):
         self.question_count += 1
-        
         if self.question_count >= self.max_questions:
-            self.finish_quiz()
+            print("\n" + "="*30)
+            print("Spectrogram Quiz Complete!")
+            self._save_results()
+            print("="*30)
+            plt.close(self.fig)
         else:
             self._select_random_item()
-    
-    def finish_quiz(self, event=None):
-        print(f"\n{'='*60}")
-        print(f"QUIZ COMPLETED!")
-        print(f"{'='*60}\n")
-        
-        self._save_results_to_file()
-        self._start_practice()
-    
-    def _save_results_to_file(self):
-        try:
-            script_dir = Path(__file__).parent
-            results_dir = script_dir / 'tone_quiz_results'
-            results_dir.mkdir(exist_ok=True)
-            
-            timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
-            filename = f"tone_quiz_spectrogram_{timestamp}.txt"
-            filepath = results_dir / filename
-            
-            total_questions = len(self.results)
-            correct_count = sum(1 for r in self.results if r['is_correct'])
-            accuracy = (correct_count / total_questions * 100) if total_questions > 0 else 0
-            total_time = sum(r['time_seconds'] for r in self.results)
-            avg_time = total_time / total_questions if total_questions > 0 else 0
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write("="*70 + "\n")
-                f.write("MANDARIN TONE QUIZ - SPECTROGRAM LEARNING\n")
-                f.write("="*70 + "\n\n")
-                
-                f.write(f"Session Start: {self.session_start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Session End: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Total Questions: {total_questions}\n")
-                f.write(f"Correct Answers: {correct_count}\n")
-                f.write(f"Accuracy: {accuracy:.1f}%\n")
-                f.write(f"Total Time: {total_time:.2f} seconds\n")
-                f.write(f"Average Time: {avg_time:.2f} seconds\n")
-                f.write(f"\nMethod: Spectrogram-based tone recognition (Librosa)\n")
-                f.write("\n" + "="*70 + "\n\n")
-                
-                for result in self.results:
-                    f.write(f"Question {result['question_number']}/{self.max_questions}\n")
-                    f.write(f"{'-'*70}\n")
-                    f.write(f"Chinese:       {result['chinese']}\n")
-                    f.write(f"Pinyin:        {result['pinyin']}\n")
-                    f.write(f"Correct Tone:  {result['correct_tone']}\n")
-                    f.write(f"Your Answer:   {result['user_answer']}\n")
-                    f.write(f"Result:        {'✓ CORRECT' if result['is_correct'] else '✗ INCORRECT'}\n")
-                    f.write(f"Time Taken:    {result['time_seconds']} seconds\n")
-                    f.write(f"Audio File:    {result['audio_file']}\n")
-                    f.write("\n")
-                
-                f.write("="*70 + "\n")
-                f.write("END OF RESULTS\n")
-                f.write("="*70 + "\n")
-            
-            print(f"\n{'='*70}")
-            print(f"✅ RESULTS SAVED")
-            print(f"Location: {filepath}")
-            print(f"Accuracy: {accuracy:.1f}% ({correct_count}/{total_questions})")
-            print(f"Avg Time: {avg_time:.2f}s")
-            print(f"{'='*70}\n")
-            
-        except Exception as e:
-            print(f"\n❌ Error saving: {e}")
-    
-    def _start_practice(self):
-        print("\n" + "="*60)
-        print("STARTING MEL SPECTROGRAM PRACTICE")
-        print("="*60 + "\n")
-        
-        sd.stop()
-        plt.close(self.fig)
-        
-        script_dir = Path(__file__).parent
-        possible_scripts = [
-            script_dir / 'understanding_tone_practice.py',
-            script_dir.parent / 'understanding_tone_practice.py',
-        ]
-        
-        main_script = None
-        for script_path in possible_scripts:
-            if script_path.exists():
-                main_script = script_path
-                break
-        
-        if main_script:
-            print(f"✓ Launching: {main_script.name}")
-            subprocess.Popen([sys.executable, str(main_script)])
-        else:
-            print(f"⚠️ Main practice script not found")
-    
+
     def show(self):
-        plt.show()
+        if self.audio_base_path:
+            plt.show()
 
 if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("MANDARIN TONE QUIZ - SPECTROGRAM LEARNING")
-    print("="*60)
-    print("Learn to recognize tones by studying spectrograms!")
-    print(f"Script location: {Path(__file__).parent}")
-    
-    quiz = ToneSpectrogramQuiz()
-    quiz.show()
+    app = ToneSpectrogramQuiz()
+    app.show()
