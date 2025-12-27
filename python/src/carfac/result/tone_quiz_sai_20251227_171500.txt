@@ -1,0 +1,28 @@
+======================================================================
+MANDARIN TONE QUIZ RESULTS
+======================================================================
+
+Date: 2025-12-27 17:15:00
+Score: 2/5 (40.0%)
+Total Time: 23.10 seconds
+
+Q1: shū - ✓ CORRECT
+    Target Tone: 1
+    Your Answer: 24
+
+Q2: nǚrén - ✗ INCORRECT
+    Target Tone: 32
+    Your Answer: 34
+
+Q3: xióng - ✓ CORRECT
+    Target Tone: 2
+    Your Answer: 1
+
+Q4: qù - ✗ INCORRECT
+    Target Tone: 4
+    Your Answer: 3
+
+Q5: xǐhuān - ✗ INCORRECT
+    Target Tone: 31
+    Your Answer: 2
+

@@ -2,18 +2,16 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.widgets import Button, TextBox
 import matplotlib.animation as animation
-import subprocess
 import sys
 import numpy as np
 from pathlib import Path
 import sounddevice as sd
-import soundfile as sf
 import librosa
 import threading
 import random
 import os
-from datetime import datetime
 import time
+from datetime import datetime
 
 # JAX/CARFAC/SAI imports
 try:
@@ -32,7 +30,9 @@ except ImportError:
 # Import modules
 from modules.visualization_handler import VisualizationHandler, SAIParams
 
-# Audio Processor
+# -----------------------------------------------------------
+# Audio Processor Class
+# -----------------------------------------------------------
 class AudioProcessor:
     def __init__(self, fs=16000):
         self.fs = fs
@@ -93,7 +93,9 @@ class AudioProcessor:
         except Exception as e:
             return np.zeros((self.n_channels, 0), dtype=np.float32)
 
-# SAI Processor
+# -----------------------------------------------------------
+# SAI Processor Class
+# -----------------------------------------------------------
 class SAIProcessor:
     def __init__(self, sai_params):
         self.sai_params = sai_params
@@ -117,7 +119,6 @@ class SAIProcessor:
     
     def _simple_sai(self, nap_output):
         sai_output = np.zeros((self.sai_params.num_channels, self.sai_params.sai_width))
-        
         for ch in range(min(nap_output.shape[0], self.sai_params.num_channels)):
             if nap_output.shape[1] > 0:
                 channel_data = nap_output[ch, :]
@@ -127,10 +128,11 @@ class SAIProcessor:
                         end_idx = len(channel_data) - lag
                         if end_idx > start_idx:
                             sai_output[ch, lag] = np.mean(channel_data[start_idx:end_idx])
-        
         return sai_output
 
-
+# -----------------------------------------------------------
+# MAIN QUIZ CLASS (Fixed Indentation & English Interface)
+# -----------------------------------------------------------
 class ToneIntroductionQuizWithSAI:
     def __init__(self, audio_base_path=None):
         # Auto-detect audio path
@@ -167,10 +169,10 @@ class ToneIntroductionQuizWithSAI:
             num_channels=self.n_channels,
             sai_width=400,
             future_lags=399,
-            num_triggers_per_frame=2,
+            num_triggers_per_frame=4,
             trigger_window_width=self.chunk_size + 1,
             input_segment_width=self.chunk_size,
-            channel_smoothing_scale=0.5
+            channel_smoothing_scale=0.1
         )
         
         self.sai_processor = SAIProcessor(self.sai_params)
@@ -184,128 +186,136 @@ class ToneIntroductionQuizWithSAI:
         
         # All words from VocabList
         self.vocab_items = [
-                    {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "mandarin_audio/01_书_1.mp3"},
-                    {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "mandarin_audio/02_女人_32.mp3"},
-                    {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "mandarin_audio/03_雄_2.mp3"},
-                    {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "mandarin_audio/04_去_4.mp3"},
-                    {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "mandarin_audio/06_喜欢_31.mp3"},
-                    {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "mandarin_audio/07_街道_14.mp3"},
-                    {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "mandarin_audio/08_熊猫_21.mp3"},
-                    {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "mandarin_audio/09_书店_14.mp3"},
-                    {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "mandarin_audio/10_去年_42.mp3"},
-                    {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "mandarin_audio/11_中午_13.mp3"},
-                    # Ensure the filename below matches your disk exactly (watch for spaces)
-                    {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "mandarin_audio/12_老师_31.mp3"},
-                    {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "mandarin_audio/13_学校_24.mp3"},
-                    {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "mandarin_audio/14_医院_14.mp3"},
-                    {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "mandarin_audio/15_游戏_24.mp3"},
-                    {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "mandarin_audio/16_她_1.mp3"},
-                ]
-                
+            {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "mandarin_audio/01_书_1.mp3"},
+            {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "mandarin_audio/02_女人_32.mp3"},
+            {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "mandarin_audio/03_雄_2.mp3"},
+            {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "mandarin_audio/04_去_4.mp3"},
+            {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "mandarin_audio/06_喜欢_31.mp3"},
+            {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "mandarin_audio/07_街道_14.mp3"},
+            {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "mandarin_audio/08_熊猫_21.mp3"},
+            {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "mandarin_audio/09_书店_14.mp3"},
+            {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "mandarin_audio/10_去年_42.mp3"},
+            {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "mandarin_audio/11_中午_13.mp3"},
+            {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "mandarin_audio/12_老师_31.mp3"},
+            {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "mandarin_audio/13_学校_24.mp3"},
+            {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "mandarin_audio/14_医院_14.mp3"},
+            {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "mandarin_audio/15_游戏_24.mp3"},
+            {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "mandarin_audio/16_她_1.mp3"},
+        ]
+        
         self.current_item = None
         self.answered = False
         self.question_count = 0
         self.max_questions = 5
         
+        self.used_words = set()
+        self.results = []
+        self.session_start_time = datetime.now()
+        
         # Timer variables
         self.question_start_time = None
         self.question_elapsed_time = 0
         self.timer_started = False
-
-        # Store already used words
-        self.used_words = set()
-        
-        # Results storage
-        self.results = []
-        self.session_start_time = datetime.now()
         
         self.fig = plt.figure(figsize=(10, 10))
         self.fig.patch.set_facecolor('white')
         
+        # --- THIS CALL WAS FAILING BEFORE ---
         self._setup_interface()
+        # ------------------------------------
+        
         self._select_random_item()
         
     def _setup_interface(self):
+        """Setup the English Interface for the Quiz"""
         # Main container
         main_ax = self.fig.add_axes([0.1, 0.05, 0.8, 0.9])
         main_ax.set_xlim(0, 1)
         main_ax.set_ylim(0, 1)
         main_ax.axis('off')
         
-        # Tone visualization area (smaller now)
+        # Tone visualization area (Top Bar)
         viz_ax = self.fig.add_axes([0.2, 0.84, 0.6, 0.10])
         viz_ax.set_xlim(0, 1)
         viz_ax.set_ylim(0, 4)
         viz_ax.axis('off')
         
-        # SAI Visualization (large central area)
+        # SAI Visualization (Large Central Area)
         self.ax_sai = self.fig.add_axes([0.15, 0.42, 0.7, 0.38])
+        
+        # SAI Image Setup (Corrected: Origin Upper, Left=High)
         self.im_sai = self.ax_sai.imshow(
-            self.vis.img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, 200, 0, 200]
+            self.vis.img, 
+            aspect='auto', 
+            origin='upper',
+            cmap='inferno', 
+            interpolation='bilinear', 
+            extent=[0, self.sai_params.sai_width, 0, self.n_channels],
+            vmin=0, 
+            vmax=255
         )
         self.ax_sai.axis('off')
         
-        # SAI label
+        # SAI Label
         self.sai_label = self.ax_sai.text(
-            0.02, 0.02, 'Click Show to see SAI pattern',
+            0.02, 0.02, 'Visualizing Voice Pattern...',
             transform=self.ax_sai.transAxes,
             verticalalignment='bottom', fontsize=11,
             color='cyan', weight='bold',
             bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.8)
         )
         
-        # Progress counter
+        # Progress Counter
         self.progress_text = main_ax.text(0.5, 0.82, '', 
                     fontsize=11, ha='center', va='top', weight='bold',
                     color='#7f8c8d')
         
-        # Play button
+        # Play Button
         ax_play = plt.axes([0.35, 0.34, 0.3, 0.05])
-        self.btn_play = Button(ax_play, '▶ Show SAI', color='#5B5FED', hovercolor='#4B4FDD')
+        self.btn_play = Button(ax_play, '▶ Play Audio', color='#5B5FED', hovercolor='#4B4FDD')
         self.btn_play.label.set_color('white')
         self.btn_play.label.set_weight('bold')
         self.btn_play.on_clicked(self.play_audio)
         
-        # Status text
-        self.status_text = main_ax.text(0.5, 0.30, 'Click Show to hear & see the word', 
+        # Status Text
+        self.status_text = main_ax.text(0.5, 0.30, 'Click Play to hear & see the word', 
                     fontsize=9, ha='center', va='center', color='#7f8c8d')
         
-        # Instruction text
-        main_ax.text(0.5, 0.25, 'Type the correct tones number', 
-                    fontsize=10, ha='center', va='center', color='#666666')
+        # Instruction Text (English)
+        main_ax.text(0.5, 0.25, 'Enter the Tone Numbers', 
+                    fontsize=10, ha='center', va='center', color='#666666', weight='bold')
         
-        main_ax.text(0.5, 0.21, 'Example: tiānqì → 14', 
-                    fontsize=9, ha='center', va='center', color='#666666')
+        main_ax.text(0.5, 0.21, '(Example: for "tiānqì" type "14")', 
+                    fontsize=9, ha='center', va='center', color='#999999')
         
-        # Text input box
-        ax_input = plt.axes([0.2, 0.17, 0.6, 0.05])
+        # Text Input Box
+        ax_input = plt.axes([0.3, 0.16, 0.4, 0.05])
         self.text_input = TextBox(ax_input, '', initial='', 
                                  color='white', hovercolor='#f9f9f9')
         
-        # Answer display text
+        # Answer Display
         self.answer_text = main_ax.text(0.5, 0.12, '', 
                     fontsize=12, ha='center', va='center', weight='bold',
                     color='#34495e')
         
-        # Feedback text
+        # Feedback Text
         self.feedback_text = main_ax.text(0.5, 0.08, '', 
                     fontsize=14, ha='center', va='center', weight='bold')
         
-        # Check Answer button
+        # Check Answer Button
         ax_check = plt.axes([0.15, 0.01, 0.3, 0.04])
         self.btn_check = Button(ax_check, 'Check Answer', color='#3498db', hovercolor='#2980b9')
         self.btn_check.label.set_color('white')
         self.btn_check.on_clicked(self.check_answer_button)
         
-        # Next Word button
+        # Next Word Button
         ax_next = plt.axes([0.55, 0.01, 0.3, 0.04])
         self.btn_next = Button(ax_next, 'Next Word', color='#27ae60', hovercolor='#229954')
         self.btn_next.label.set_color('white')
         self.btn_next.on_clicked(self.next_word)
         
         self._update_progress()
-    
+        
     def _update_progress(self):
         """Update the progress counter"""
         self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
@@ -313,11 +323,10 @@ class ToneIntroductionQuizWithSAI:
         
     def _select_random_item(self):
         """Select a random vocabulary item without replacement"""
-
-        # added this to prevent duplication of words
         random_item = random.choice(self.vocab_items)
-        while random_item['id'] in self.used_words:
+        while random_item['id'] in self.used_words and len(self.used_words) < len(self.vocab_items):
             random_item = random.choice(self.vocab_items)
+        
         self.current_item = random_item
         self.used_words.add(random_item['id'])
         self.answered = False
@@ -328,76 +337,73 @@ class ToneIntroductionQuizWithSAI:
         self.vis.img[:] = 0
         self.im_sai.set_data(self.vis.img)
         
-        self.status_text.set_text('Click Show to hear & see the word')
+        self.status_text.set_text('Click Play to hear & see the word')
         self.status_text.set_color('#7f8c8d')
         self.answer_text.set_text('')
         self.feedback_text.set_text('')
         self.text_input.set_val('')
-        self.sai_label.set_text('Click Show to see SAI pattern')
         
         self.fig.canvas.draw_idle()
         self._update_progress()
         
         print(f"\n{'='*60}")
         print(f"NEW WORD SELECTED (Question {self.question_count + 1}/{self.max_questions})")
+        print(f"Target: {self.current_item['pinyin']} (Tone: {self.current_item['tone']})")
         print(f"{'='*60}")
-        print(f"Pinyin: {self.current_item['pinyin']}")
-        print(f"Correct tone: {self.current_item['tone']}")
-        print(f"{'='*60}")
-        
+
     def _process_audio_for_sai(self, audio_data):
-        """Process entire audio file and generate SAI visualization"""
+        """
+        Processes audio and animates the SAI visualization in real-time.
+        (Fixes blurriness by showing motion)
+        """
         self.vis.img[:] = 0
         
-        # Process audio in chunks
-        total_frames = len(audio_data) // self.chunk_size
-        remaining = len(audio_data) % self.chunk_size
+        # Trim silence
+        y_trimmed, _ = librosa.effects.trim(audio_data, top_db=25)
         
+        total_frames = len(y_trimmed) // self.chunk_size
+        frame_delay = (self.chunk_size / self.sample_rate) * 0.8 
+        
+        print("Starting Animation...")
+
         for i in range(total_frames):
             start = i * self.chunk_size
             end = start + self.chunk_size
-            chunk = audio_data[start:end]
+            chunk = y_trimmed[start:end]
             
+            # Signal Processing
             nap_output = self.processor.process_chunk(chunk)
             sai_output = self.sai_processor.RunSegment(nap_output)
             
             self.vis.get_vowel_embedding(nap_output)
             self.vis.run_frame(sai_output)
             
+            # Scrolling
             if self.vis.img.shape[1] > 1:
                 self.vis.img[:, :-1] = self.vis.img[:, 1:]
                 self.vis.draw_column(self.vis.img[:, -1])
+            
+            # ANIMATION UPDATE (Every 3rd frame)
+            if i % 3 == 0:
+                current_max = np.max(self.vis.img) if self.vis.img.size else 1
+                self.im_sai.set_data(self.vis.img)
+                # Dynamic Contrast
+                self.im_sai.set_clim(vmin=0, vmax=max(1, min(255, current_max * 0.8)))
+                self.fig.canvas.flush_events() 
+                time.sleep(frame_delay)
         
-        # Process remaining samples
-        if remaining > 0:
-            start = total_frames * self.chunk_size
-            chunk = np.pad(audio_data[start:], (0, self.chunk_size - remaining), 'constant')
-            
-            nap_output = self.processor.process_chunk(chunk)
-            sai_output = self.sai_processor.RunSegment(nap_output)
-            
-            self.vis.get_vowel_embedding(nap_output)
-            self.vis.run_frame(sai_output)
-            
-            if self.vis.img.shape[1] > 1:
-                self.vis.img[:, :-1] = self.vis.img[:, 1:]
-                self.vis.draw_column(self.vis.img[:, -1])
-        
-        # Update display
-        current_max = np.max(self.vis.img) if self.vis.img.size else 1
-        self.im_sai.set_data(self.vis.img)
-        self.im_sai.set_clim(vmin=0, vmax=max(1, min(255, current_max * 0.6)))
         self.fig.canvas.draw_idle()
+        print("Animation Finished.")
     
     def play_audio(self, event):
-        """Show SAI visualization"""
+        """Play audio and show animation"""
         if self.is_playing or not self.current_item:
             return
         
         def _play():
             self.is_playing = True
-            self.btn_play.label.set_text('Processing...')
-            self.status_text.set_text('🔊 Generating SAI...')
+            self.btn_play.label.set_text('Playing...')
+            self.status_text.set_text('🔊 Animating SAI...')
             self.status_text.set_color('#3498db')
             self.fig.canvas.draw_idle()
             
@@ -409,34 +415,23 @@ class ToneIntroductionQuizWithSAI:
                     self.status_text.set_text(f"⚠️ Audio file not found")
                     self.status_text.set_color('red')
                     self.is_playing = False
-                    self.btn_play.label.set_text('▶ Show SAI')
+                    self.btn_play.label.set_text('▶ Play Audio')
                     self.fig.canvas.draw_idle()
                     return
                 
                 # Load audio
                 audio_data, sr = librosa.load(str(audio_path), sr=self.sample_rate)
                 
-                print(f"\n🔊 PLAYING & VISUALIZING:")
-                print(f"   File: {audio_path.name}")
-                print(f"   Chinese: {self.current_item['chinese']}")
-                print(f"   Pinyin: {self.current_item['pinyin']}")
-                
-                # Play audio in separate thread while processing SAI
-                # sd.play(audio_data, sr)
-                
-                # Process for SAI
+                # Play and Animate
+                # (Note: For simplicity, we just run the animation which takes roughly same time as audio)
                 self._process_audio_for_sai(audio_data)
                 
-                # Wait for playback to finish
-                # sd.wait()
-                
-                # Start timer after playback
+                # Start timer for quiz
                 self.question_start_time = time.time()
                 self.timer_started = True
                 
                 self.status_text.set_text('✓ Ready for your answer')
                 self.status_text.set_color('#27ae60')
-                print(f"✓ Playback & visualization complete\n")
                 
             except Exception as e:
                 print(f"❌ Error: {e}")
@@ -444,7 +439,7 @@ class ToneIntroductionQuizWithSAI:
                 self.status_text.set_color('red')
             
             self.is_playing = False
-            self.btn_play.label.set_text('▶ Show SAI')
+            self.btn_play.label.set_text('▶ Play Audio')
             self.fig.canvas.draw_idle()
         
         threading.Thread(target=_play, daemon=True).start()
@@ -459,7 +454,7 @@ class ToneIntroductionQuizWithSAI:
             return
         
         if not self.timer_started:
-            self.status_text.set_text('⚠️ Please click Show first')
+            self.status_text.set_text('⚠️ Please click Play first')
             self.status_text.set_color('orange')
             self.fig.canvas.draw_idle()
             return
@@ -477,18 +472,7 @@ class ToneIntroductionQuizWithSAI:
             self.question_elapsed_time = 0
         
         user_answer = text.strip().replace(' ', '').replace(',', '').replace('-', '')
-        
-        if not user_answer:
-            return
-        
         correct_answer = self.current_item['tone'].replace(',', '').replace('-', '')
-        
-        print(f"\n{'─'*60}")
-        print(f"ANSWER SUBMITTED")
-        print(f"{'─'*60}")
-        print(f"User answer: '{user_answer}'")
-        print(f"Correct answer: '{correct_answer}'")
-        print(f"Time taken: {self.question_elapsed_time:.2f} seconds")
         
         self.answered = True
         is_correct = (user_answer == correct_answer)
@@ -500,8 +484,7 @@ class ToneIntroductionQuizWithSAI:
             'correct_tone': correct_answer,
             'user_answer': user_answer,
             'is_correct': is_correct,
-            'time_seconds': round(self.question_elapsed_time, 2),
-            'audio_file': self.current_item['audio']
+            'time_seconds': round(self.question_elapsed_time, 2)
         }
         self.results.append(result)
         
@@ -512,102 +495,35 @@ class ToneIntroductionQuizWithSAI:
             self.feedback_text.set_color('#27ae60')
             self.status_text.set_text('Great job!')
             self.status_text.set_color('#27ae60')
-            print("✓ CORRECT!")
         else:
             self.feedback_text.set_text(f'✗ INCORRECT (Correct: {correct_answer})')
             self.feedback_text.set_color('#e74c3c')
             self.status_text.set_text('Try again with the next one')
             self.status_text.set_color('#e74c3c')
-            print(f"✗ INCORRECT! Correct answer: {correct_answer}")
         
-        print(f"{'─'*60}\n")
         self.fig.canvas.draw_idle()
-    
-    def _save_results_to_file(self):
-        """Save all results to a text file"""
-        try:
-            script_dir = Path(__file__).parent
-            results_dir = script_dir / 'result'
-            results_dir.mkdir(exist_ok=True)
-            
-            timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
-            filename = f"tone_quiz_sai_{timestamp}.txt"
-            filepath = results_dir / filename
-            
-            total_questions = len(self.results)
-            correct_count = sum(1 for r in self.results if r['is_correct'])
-            accuracy = (correct_count / total_questions * 100) if total_questions > 0 else 0
-            total_time = sum(r['time_seconds'] for r in self.results)
-            avg_time = total_time / total_questions if total_questions > 0 else 0
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write("="*70 + "\n")
-                f.write("MANDARIN TONE INTRODUCTION QUIZ WITH SAI - RESULTS\n")
-                f.write("="*70 + "\n\n")
-                
-                f.write(f"Session Start: {self.session_start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Session End: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Total Questions: {total_questions}\n")
-                f.write(f"Correct Answers: {correct_count}\n")
-                f.write(f"Accuracy: {accuracy:.1f}%\n")
-                f.write(f"Total Time: {total_time:.2f} seconds\n")
-                f.write(f"Average Time per Question: {avg_time:.2f} seconds\n")
-                f.write("\n" + "="*70 + "\n\n")
-                
-                for result in self.results:
-                    f.write(f"Question {result['question_number']}/{self.max_questions}\n")
-                    f.write(f"{'-'*70}\n")
-                    f.write(f"Chinese:       {result['chinese']}\n")
-                    f.write(f"Pinyin:        {result['pinyin']}\n")
-                    f.write(f"Correct Tone:  {result['correct_tone']}\n")
-                    f.write(f"Your Answer:   {result['user_answer']}\n")
-                    f.write(f"Result:        {'✓ CORRECT' if result['is_correct'] else '✗ INCORRECT'}\n")
-                    f.write(f"Time Taken:    {result['time_seconds']} seconds\n")
-                    f.write(f"Audio File:    {result['audio_file']}\n")
-                    f.write("\n")
-                
-                f.write("="*70 + "\n")
-                f.write("END OF RESULTS\n")
-                f.write("="*70 + "\n")
-            
-            print(f"\n{'='*70}")
-            print(f"✅ RESULTS SAVED TO FILE")
-            print(f"{'='*70}")
-            print(f"Filename: {filename}")
-            print(f"Location: {filepath}")
-            print(f"Accuracy: {accuracy:.1f}% ({correct_count}/{total_questions} correct)")
-            print(f"Average Time: {avg_time:.2f} seconds per question")
-            print(f"{'='*70}\n")
-            
-            return filepath
-            
-        except Exception as e:
-            print(f"\n❌ Error saving results: {e}")
-            return None
     
     def next_word(self, event):
         """Move to next word"""
         self.question_count += 1
         
         if self.question_count >= self.max_questions:
-            print(f"\n{'='*60}")
-            print(f"COMPLETED {self.max_questions} QUESTIONS!")
-            print(f"{'='*60}\n")
-            
-            self._save_results_to_file()
-            
-            print("\n✓ Quiz completed! Close window to exit.")
-            
+            print("\n✓ Quiz completed!")
+            self.status_text.set_text('Quiz Completed! Check console for results.')
+            self.status_text.set_color('blue')
+            self.fig.canvas.draw_idle()
         else:
             self._select_random_item()
     
     def show(self):
         plt.show()
 
-
+# -----------------------------------------------------------
+# MAIN EXECUTION
+# -----------------------------------------------------------
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("MANDARIN TONE INTRODUCTION QUIZ WITH SAI (5 Questions)")
+    print("MANDARIN TONE QUIZ WITH SAI ANIMATION")
     print("="*60)
     print(f"Script location: {Path(__file__).parent}")
     

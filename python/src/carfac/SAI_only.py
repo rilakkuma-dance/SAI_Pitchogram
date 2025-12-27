@@ -1197,8 +1197,8 @@ class SAIVisualizationWithWav2Vec2:
         # LEFT SAI display (Your Audio - Live) - SWAPPED to match reference
         self.ax_realtime = self.fig.add_subplot(gs[0, 0])
         self.im_realtime = self.ax_realtime.imshow(
-            self.vis_realtime.img, aspect='auto', origin='lower',
-            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            self.vis_realtime.img, aspect='auto', origin='upper',
+            interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='magma', vmin=0, vmax=255
         )
         self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=13, weight='bold')
@@ -1207,8 +1207,8 @@ class SAIVisualizationWithWav2Vec2:
         # RIGHT SAI display (Reference Audio) - SWAPPED to match reference
         self.ax_file = self.fig.add_subplot(gs[0, 1])
         self.im_file = self.ax_file.imshow(
-            self.vis_file.img, aspect='auto', origin='lower',
-            interpolation='bilinear', extent=[self.sai_width, 0, 0, self.n_channels],
+            self.vis_file.img, aspect='auto', origin='upper',
+            interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='magma', vmin=0, vmax=255
         )
         self.ax_file.set_title('Reference Audio', color='cyan', fontsize=13, weight='bold')

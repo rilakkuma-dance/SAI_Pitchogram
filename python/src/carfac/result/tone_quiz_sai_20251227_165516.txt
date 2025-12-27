@@ -1,0 +1,67 @@
+======================================================================
+MANDARIN TONE INTRODUCTION QUIZ WITH SAI - RESULTS
+======================================================================
+
+Session Start: 2025-12-27 16:55:16
+Session End: 2025-12-27 16:56:05
+Total Questions: 5
+Correct Answers: 2
+Accuracy: 40.0%
+Total Time: 31.74 seconds
+Average Time per Question: 6.35 seconds
+
+======================================================================
+
+Question 1/5
+----------------------------------------------------------------------
+Chinese:       她
+Pinyin:        tā
+Correct Tone:  1
+Your Answer:   1
+Result:        ✓ CORRECT
+Time Taken:    5.39 seconds
+Audio File:    mandarin_audio/16_她_1.mp3
+
+Question 2/5
+----------------------------------------------------------------------
+Chinese:       医院
+Pinyin:        yīyuàn
+Correct Tone:  14
+Your Answer:   2
+Result:        ✗ INCORRECT
+Time Taken:    12.97 seconds
+Audio File:    mandarin_audio/14_医院_14.mp3
+
+Question 3/5
+----------------------------------------------------------------------
+Chinese:       中午
+Pinyin:        zhōngwǔ
+Correct Tone:  13
+Your Answer:   14
+Result:        ✗ INCORRECT
+Time Taken:    5.59 seconds
+Audio File:    mandarin_audio/11_中午_13.mp3
+
+Question 4/5
+----------------------------------------------------------------------
+Chinese:       熊猫
+Pinyin:        xióngmāo
+Correct Tone:  21
+Your Answer:   12
+Result:        ✗ INCORRECT
+Time Taken:    4.7 seconds
+Audio File:    mandarin_audio/08_熊猫_21.mp3
+
+Question 5/5
+----------------------------------------------------------------------
+Chinese:       书店
+Pinyin:        shūdiàn
+Correct Tone:  14
+Your Answer:   14
+Result:        ✓ CORRECT
+Time Taken:    3.09 seconds
+Audio File:    mandarin_audio/09_书店_14.mp3
+
+======================================================================
+END OF RESULTS
+======================================================================
