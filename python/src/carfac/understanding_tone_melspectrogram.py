@@ -12,59 +12,7 @@ import random
 import os
 from datetime import datetime
 import time
-from scipy import signal
-from scipy.fft import fft
-
-class SpectrogramProcessor:
-    """Mel spectrogram processor"""
-    def __init__(self, sample_rate=16000, n_fft=512, hop_length=128, n_mels=128):
-        self.sample_rate = sample_rate
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        self.n_mels = n_mels
-        self.window = signal.windows.hann(n_fft)
-        self.mel_basis = self._create_mel_filterbank()
-    
-    def _create_mel_filterbank(self):
-        def hz_to_mel(hz):
-            return 2595 * np.log10(1 + hz / 700)
-        def mel_to_hz(mel):
-            return 700 * (10**(mel / 2595) - 1)
-        
-        fmin, fmax = 0, self.sample_rate / 2
-        mel_min, mel_max = hz_to_mel(fmin), hz_to_mel(fmax)
-        mel_points = np.linspace(mel_min, mel_max, self.n_mels + 2)
-        hz_points = mel_to_hz(mel_points)
-        bin_points = np.floor((self.n_fft + 1) * hz_points / self.sample_rate).astype(int)
-        
-        filterbank = np.zeros((self.n_mels, self.n_fft // 2 + 1))
-        for i in range(self.n_mels):
-            left, center, right = bin_points[i:i+3]
-            for j in range(left, center):
-                filterbank[i, j] = (j - left) / (center - left)
-            for j in range(center, right):
-                filterbank[i, j] = (right - j) / (right - center)
-        return filterbank
-    
-    def process_audio(self, audio_data):
-        """Process entire audio file into spectrogram"""
-        spec_width = (len(audio_data) - self.n_fft) // self.hop_length + 1
-        spectrogram = np.zeros((self.n_mels, spec_width))
-        
-        for i in range(spec_width):
-            start = i * self.hop_length
-            end = start + self.n_fft
-            if end > len(audio_data):
-                break
-            
-            chunk = audio_data[start:end]
-            windowed = chunk * self.window
-            spectrum = np.abs(fft(windowed)[:self.n_fft // 2 + 1])
-            spectrum = 20 * np.log10(spectrum + 1e-10)
-            spec_column = self.mel_basis @ spectrum
-            spectrogram[:, i] = spec_column
-        
-        return spectrogram
+import librosa  # <--- Added librosa import
 
 class ToneSpectrogramQuiz:
     def __init__(self, audio_base_path=None):
@@ -89,9 +37,6 @@ class ToneSpectrogramQuiz:
         
         self.audio_base_path = Path(audio_base_path)
         self.sample_rate = 16000
-        
-        # Spectrogram processor
-        self.spec_processor = SpectrogramProcessor(sample_rate=self.sample_rate)
         
         # Vocabulary items
         self.vocab_items = [
@@ -147,13 +92,13 @@ class ToneSpectrogramQuiz:
         ax_top = self.fig.add_subplot(gs[0])
         ax_top.axis('off')
         ax_top.text(0.5, 0.8, 'Learn Tones from Spectrogram', 
-                   fontsize=20, ha='center', va='center', weight='bold')
+                    fontsize=20, ha='center', va='center', weight='bold')
         ax_top.text(0.5, 0.4, 'Look at the spectrogram pattern and identify the tones', 
-                   fontsize=12, ha='center', va='center', color='#666666')
+                    fontsize=12, ha='center', va='center', color='#666666')
         
         # Progress counter
         self.progress_text = ax_top.text(0.95, 0.9, '', 
-                   fontsize=12, ha='right', va='top', weight='bold', color='#7f8c8d')
+                    fontsize=12, ha='right', va='top', weight='bold', color='#7f8c8d')
         
         # Middle section: Spectrogram display
         self.ax_spec = self.fig.add_subplot(gs[1])
@@ -184,7 +129,7 @@ class ToneSpectrogramQuiz:
         
         # Instruction
         ax_bottom.text(0.5, 0.60, 'Type the correct tones (e.g., "14" for tones 1+4)', 
-                      fontsize=10, ha='center', va='center', color='#666666')
+                       fontsize=10, ha='center', va='center', color='#666666')
         
         # Text input box
         from matplotlib.widgets import TextBox
@@ -194,10 +139,10 @@ class ToneSpectrogramQuiz:
         
         # Answer and feedback
         self.answer_text = ax_bottom.text(0.5, 0.15, '', 
-                   fontsize=13, ha='center', va='center', weight='bold', color='#34495e')
+                    fontsize=13, ha='center', va='center', weight='bold', color='#34495e')
         
         self.feedback_text = ax_bottom.text(0.5, 0.03, '', 
-                   fontsize=16, ha='center', va='center', weight='bold')
+                    fontsize=16, ha='center', va='center', weight='bold')
         
         # Buttons
         from matplotlib.widgets import Button
@@ -257,7 +202,7 @@ class ToneSpectrogramQuiz:
         print(f"{'='*60}")
         
     def show_spectrogram(self, event=None):
-        """Load and display the spectrogram"""
+        """Load and display the spectrogram using Librosa"""
         if self.spectrogram_shown:
             return
             
@@ -270,19 +215,26 @@ class ToneSpectrogramQuiz:
             return
         
         try:
-            # Load and process audio
-            audio_data, sr = sf.read(str(audio_path))
-            if sr != self.sample_rate:
-                # Simple resampling
-                num_samples = int(len(audio_data) * self.sample_rate / sr)
-                audio_data = np.interp(
-                    np.linspace(0, len(audio_data), num_samples),
-                    np.arange(len(audio_data)),
-                    audio_data
-                )
+            # 1. Load Audio with Librosa (handles resampling automatically)
+            # y = audio time series, sr = sampling rate
+            y, sr = librosa.load(str(audio_path), sr=self.sample_rate)
             
-            # Generate spectrogram
-            self.current_spectrogram = self.spec_processor.process_audio(audio_data)
+            # 2. Generate Mel Spectrogram (Linear Power)
+            # This matches your previous settings: n_fft=512, hop_length=128, n_mels=128
+            mel_spectrogram = librosa.feature.melspectrogram(
+                y=y, 
+                sr=sr, 
+                n_fft=512, 
+                hop_length=128, 
+                n_mels=128,
+                fmax=8000  # Nyquist frequency for 16kHz
+            )
+            
+            # 3. Convert to Log Scale (Decibels)
+            # This replaces the custom "10 * np.log10" logic
+            log_mel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=np.max)
+            
+            self.current_spectrogram = log_mel_spectrogram
             
             # Display spectrogram
             self.im_spec.set_data(self.current_spectrogram)
@@ -299,7 +251,7 @@ class ToneSpectrogramQuiz:
             
             self.fig.canvas.draw_idle()
             
-            print(f"✓ Spectrogram displayed, timer started")
+            print(f"✓ Spectrogram displayed (via Librosa), timer started")
             
         except Exception as e:
             self.status_text.set_text(f'❌ Error loading spectrogram')
@@ -419,7 +371,7 @@ class ToneSpectrogramQuiz:
                 f.write(f"Accuracy: {accuracy:.1f}%\n")
                 f.write(f"Total Time: {total_time:.2f} seconds\n")
                 f.write(f"Average Time: {avg_time:.2f} seconds\n")
-                f.write(f"\nMethod: Spectrogram-based tone recognition\n")
+                f.write(f"\nMethod: Spectrogram-based tone recognition (Librosa)\n")
                 f.write("\n" + "="*70 + "\n\n")
                 
                 for result in self.results:
@@ -472,7 +424,7 @@ class ToneSpectrogramQuiz:
             print(f"✓ Launching: {main_script.name}")
             subprocess.Popen([sys.executable, str(main_script)])
         else:
-            print("⚠️ Main practice script not found")
+            print(f"⚠️ Main practice script not found")
     
     def show(self):
         plt.show()
