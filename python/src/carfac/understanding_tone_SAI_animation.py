@@ -130,7 +130,7 @@ class ToneIntroductionQuizWithSAI:
                     print(f"✓ Found audio path: {audio_base_path}")
                     break
             if audio_base_path is None:
-                audio_base_path = script_dir / 'mandarin_audio'
+                audio_base_path = script_dir / 'mandarin_audio_session1'
         
         self.audio_base_path = Path(audio_base_path)
         self.sample_rate = 16000
@@ -156,22 +156,27 @@ class ToneIntroductionQuizWithSAI:
         self.audio_stream = None
         
         # 5. Quiz Data
+        # 5. Quiz Data (Updated from your list)
         self.vocab_items = [
-            {"id": 1, "chinese": "书", "pinyin": "shū", "tone": "1", "audio": "mandarin_audio/01_书_1.mp3"},
-            {"id": 2, "chinese": "女人", "pinyin": "nǚrén", "tone": "32", "audio": "mandarin_audio/02_女人_32.mp3"},
-            {"id": 3, "chinese": "雄", "pinyin": "xióng", "tone": "2", "audio": "mandarin_audio/03_雄_2.mp3"},
-            {"id": 4, "chinese": "去", "pinyin": "qù", "tone": "4", "audio": "mandarin_audio/04_去_4.mp3"},
-            {"id": 6, "chinese": "喜欢", "pinyin": "xǐhuān", "tone": "31", "audio": "mandarin_audio/06_喜欢_31.mp3"},
-            {"id": 7, "chinese": "街道", "pinyin": "jiēdào", "tone": "14", "audio": "mandarin_audio/07_街道_14.mp3"},
-            {"id": 8, "chinese": "熊猫", "pinyin": "xióngmāo", "tone": "21", "audio": "mandarin_audio/08_熊猫_21.mp3"},
-            {"id": 9, "chinese": "书店", "pinyin": "shūdiàn", "tone": "14", "audio": "mandarin_audio/09_书店_14.mp3"},
-            {"id": 10, "chinese": "去年", "pinyin": "qùnián", "tone": "42", "audio": "mandarin_audio/10_去年_42.mp3"},
-            {"id": 11, "chinese": "中午", "pinyin": "zhōngwǔ", "tone": "13", "audio": "mandarin_audio/11_中午_13.mp3"},
-            {"id": 12, "chinese": "老师", "pinyin": "lǎoshī", "tone": "31", "audio": "mandarin_audio/12_老师_31.mp3"},
-            {"id": 13, "chinese": "学校", "pinyin": "xuéxiào", "tone": "24", "audio": "mandarin_audio/13_学校_24.mp3"},
-            {"id": 14, "chinese": "医院", "pinyin": "yīyuàn", "tone": "14", "audio": "mandarin_audio/14_医院_14.mp3"},
-            {"id": 15, "chinese": "游戏", "pinyin": "yóuxì", "tone": "24", "audio": "mandarin_audio/15_游戏_24.mp3"},
-            {"id": 16, "chinese": "她", "pinyin": "tā", "tone": "1", "audio": "mandarin_audio/16_她_1.mp3"},
+            # Tone 1
+            {"id": 1,  "chinese": "妈", "pinyin": "mā",   "tone": "1", "audio": "mandarin_audio_session1/01_妈_1.mp3"},
+            {"id": 2,  "chinese": "天", "pinyin": "tiān", "tone": "1", "audio": "mandarin_audio_session1/02_天_1.mp3"},
+            {"id": 3,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "audio": "mandarin_audio_session1/03_心_1.mp3"},
+            {"id": 4,  "chinese": "车", "pinyin": "chē",  "tone": "1", "audio": "mandarin_audio_session1/04_车_1.mp3"},
+            # Tone 2
+            {"id": 5,  "chinese": "麻", "pinyin": "má",   "tone": "2", "audio": "mandarin_audio_session1/05_麻_2.mp3"},
+            {"id": 6,  "chinese": "学", "pinyin": "xué",  "tone": "2", "audio": "mandarin_audio_session1/06_学_2.mp3"},
+            {"id": 7,  "chinese": "人", "pinyin": "rén",  "tone": "2", "audio": "mandarin_audio_session1/07_人_2.mp3"},
+            {"id": 8,  "chinese": "白", "pinyin": "bái",  "tone": "2", "audio": "mandarin_audio_session1/08_白_2.mp3"},
+            # Tone 3
+            {"id": 9,  "chinese": "马", "pinyin": "mǎ",   "tone": "3", "audio": "mandarin_audio_session1/09_马_3.mp3"},
+            {"id": 10, "chinese": "老", "pinyin": "lǎo",  "tone": "3", "audio": "mandarin_audio_session1/10_老_3.mp3"},
+            {"id": 11, "chinese": "火", "pinyin": "huǒ",  "tone": "3", "audio": "mandarin_audio_session1/11_火_3.mp3"},
+            {"id": 12, "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "audio": "mandarin_audio_session1/12_狗_3.mp3"},
+            # Tone 4
+            {"id": 13, "chinese": "叫", "pinyin": "jiào", "tone": "4", "audio": "mandarin_audio_session1/13_叫_4.mp3"},
+            {"id": 14, "chinese": "骂", "pinyin": "mà",   "tone": "4", "audio": "mandarin_audio_session1/14_骂_4.mp3"},
+            {"id": 15, "chinese": "去", "pinyin": "qù",   "tone": "4", "audio": "mandarin_audio_session1/15_去_4.mp3"},
         ]
         
         self.current_item = None

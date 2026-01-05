@@ -59,15 +59,15 @@ class ToneIntroductionQuiz:
 
     def _find_audio_folder(self):
         script_dir = Path(__file__).parent.resolve()
-        potential_path = script_dir / 'mandarin_audio'
+        potential_path = script_dir / 'mandarin_audio_session1'
         if potential_path.exists(): return potential_path
-        potential_path = script_dir.parent / 'mandarin_audio'
+        potential_path = script_dir.parent / 'mandarin_audio_session1'
         if potential_path.exists(): return potential_path
 
-        print("⚠️ Could not auto-detect 'mandarin_audio' folder.")
+        print("⚠️ Could not auto-detect 'mandarin_audio_session1' folder.")
         root = tk.Tk()
         root.withdraw() 
-        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio' folder")
+        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_session1' folder")
         root.destroy()
         if folder_selected: return Path(folder_selected)
         return None
