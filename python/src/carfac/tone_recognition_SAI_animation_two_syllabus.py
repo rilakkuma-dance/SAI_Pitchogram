@@ -10,6 +10,7 @@ import random
 import os
 import time
 from datetime import datetime
+import subprocess
 
 # JAX/CARFAC/SAI imports
 try:
@@ -161,10 +162,8 @@ class ToneIntroductionQuizWithSAI:
         # 4. Audio Playback Variables
         self.audio_data = None
         self.current_frame_index = 0
-        self.audio_stream = None
         
-        # 5. Quiz Data (Corrected for your folder)
-        # 5. Quiz Data (Updated from second screenshot: Two-Syllable Words)
+        # 5. Quiz Data (Two-Syllable Words)
         self.vocab_items = [
             {"id": 1,  "chinese": "医生", "pinyin": "yīshēng",   "tone": "11", "audio": "01_医生_11.wav"},
             {"id": 2,  "chinese": "商店", "pinyin": "shāngdiàn", "tone": "14", "audio": "02_商店_14.wav"},
@@ -256,17 +255,9 @@ class ToneIntroductionQuizWithSAI:
             self.current_frame_index = 0
             chunk = self.audio_data[0 : self.chunk_size]
             
-            if self.audio_stream:
-                try:
-                    self.audio_stream.stop()
-                    self.audio_stream.close()
-                except: pass
-            
+            # Restart Audio cleanly
             try:
-                self.audio_stream = sd.OutputStream(
-                    samplerate=self.sample_rate, channels=1, dtype=np.float32
-                )
-                self.audio_stream.start()
+                sd.stop()
                 sd.play(self.audio_data, self.sample_rate)
             except: pass
 
@@ -295,6 +286,7 @@ class ToneIntroductionQuizWithSAI:
             self.btn_play.color = '#5B5FED'
             self.btn_play.hovercolor = '#4B4FDD'
             self.status_text.set_text('Stopped.')
+            self.fig.canvas.draw_idle()
         else:
             self.is_playing = True
             
@@ -320,6 +312,7 @@ class ToneIntroductionQuizWithSAI:
             self.btn_play.hovercolor = '#c0392b'
             self.status_text.set_text('⟳ Looping Audio & SAI...')
             self.status_text.set_color('#3498db')
+            self.fig.canvas.draw_idle()
 
     def _select_random_item(self):
         self.is_playing = False
@@ -376,13 +369,15 @@ class ToneIntroductionQuizWithSAI:
         }
         self.results.append(result)
         
-        self.answer_text.set_text(f"Your answer: {user_answer}")
+        #self.answer_text.set_text(f"Your answer: {user_answer}")
         if is_correct:
-            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_text('CORRECT!')
             self.feedback_text.set_color('#27ae60')
         else:
-            self.feedback_text.set_text(f'✗ INCORRECT (Correct: {correct_answer})')
+            self.feedback_text.set_text(f'INCORRECT (Correct: {correct_answer})')
             self.feedback_text.set_color('#e74c3c')
+            
+        self.fig.canvas.draw_idle()
 
     def next_word(self, event):
         self.question_count += 1
@@ -393,6 +388,9 @@ class ToneIntroductionQuizWithSAI:
             self._save_results_to_file()
             self.status_text.set_text('Quiz Completed!')
             self.status_text.set_color('blue')
+            
+            plt.close(self.fig)
+            self._launch_next_script()
         else:
             self._select_random_item()
 
@@ -402,7 +400,7 @@ class ToneIntroductionQuizWithSAI:
             results_dir = script_dir / 'result'
             results_dir.mkdir(exist_ok=True)
             timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
-            filename = f"tone_quiz_sai_{timestamp}.txt"
+            filename = f"tone_quiz_two_syllabus_sai_{timestamp}.txt"
             filepath = results_dir / filename
             
             correct_count = sum(1 for r in self.results if r['is_correct'])
@@ -417,10 +415,18 @@ class ToneIntroductionQuizWithSAI:
         except Exception as e:
             print(f"Save Error: {e}")
 
+    def _launch_next_script(self):
+        """Logic to launch next script if needed (currently placeholder)"""
+        print("\nAll sessions complete!")
+        # If you have a 'session 2' or 'results analysis' script, add it here.
+        # Example:
+        # next_script = Path(...) 
+        # subprocess.Popen([sys.executable, str(next_script)])
+
     def show(self):
-        # --- FIX 2: Added cache_frame_data=False to silence warning ---
+        # IMPORTANT: Set blit=False to ensure buttons work reliably
         self.ani = animation.FuncAnimation(
-            self.fig, self.update_animation, interval=20, blit=True, cache_frame_data=False
+            self.fig, self.update_animation, interval=50, blit=False, cache_frame_data=False
         )
         plt.show()
 
@@ -429,7 +435,7 @@ class ToneIntroductionQuizWithSAI:
 # -----------------------------------------------------------
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("MANDARIN TONE QUIZ (HQ LOOP VERSION)")
+    print("MANDARIN TONE QUIZ - TWO SYLLABLES (HQ LOOP VERSION)")
     print("="*60)
     
     intro = ToneIntroductionQuizWithSAI()

@@ -10,7 +10,7 @@ import random
 import os
 import time
 from datetime import datetime
-import subprocess  # Added for launching the next script
+import subprocess
 
 # JAX/CARFAC/SAI imports
 try:
@@ -123,7 +123,6 @@ class ToneIntroductionQuizWithSAI:
         if audio_base_path is None:
             script_dir = Path(__file__).parent.resolve()
             
-            # --- FIX 1: Look for the correct folder first ---
             possible_paths = [
                 script_dir / 'mandarin_audio_one_syllabus', 
                 script_dir.parent / 'mandarin_audio_one_syllabus',
@@ -137,7 +136,6 @@ class ToneIntroductionQuizWithSAI:
                     print(f"✓ Found audio path: {audio_base_path}")
                     break
             
-            # Default fallback if nothing found
             if audio_base_path is None:
                 audio_base_path = script_dir / 'mandarin_audio_one_syllabus'
         
@@ -162,9 +160,8 @@ class ToneIntroductionQuizWithSAI:
         # 4. Audio Playback Variables
         self.audio_data = None
         self.current_frame_index = 0
-        self.audio_stream = None
         
-        # 5. Quiz Data (Corrected for your folder)
+        # 5. Quiz Data
         self.vocab_items = [
             # Tone 1
             {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "audio": "01_天_1.wav"},
@@ -255,32 +252,29 @@ class ToneIntroductionQuizWithSAI:
         if not self.is_playing or self.audio_data is None:
             return [self.im_sai]
 
+        # Handle Audio/Visual Sync Loop
         if self.current_frame_index + self.chunk_size < len(self.audio_data):
+            # Advance to next chunk
             chunk = self.audio_data[self.current_frame_index : self.current_frame_index + self.chunk_size]
             self.current_frame_index += self.chunk_size
         else:
+            # Loop Reset
             self.current_frame_index = 0
             chunk = self.audio_data[0 : self.chunk_size]
             
-            if self.audio_stream:
-                try:
-                    self.audio_stream.stop()
-                    self.audio_stream.close()
-                except: pass
-            
+            # Restart Audio cleanly
             try:
-                self.audio_stream = sd.OutputStream(
-                    samplerate=self.sample_rate, channels=1, dtype=np.float32
-                )
-                self.audio_stream.start()
+                sd.stop()
                 sd.play(self.audio_data, self.sample_rate)
             except: pass
 
+        # Process Math
         nap_output = self.processor.process_chunk(chunk)
         sai_output = self.sai_processor.RunSegment(nap_output)
         self.vis.get_vowel_embedding(nap_output)
         self.vis.run_frame(sai_output)
         
+        # Shift Image
         if self.vis.img.shape[1] > 1:
             self.vis.img[:, :-1] = self.vis.img[:, 1:]
             self.vis.draw_column(self.vis.img[:, -1])
@@ -301,6 +295,7 @@ class ToneIntroductionQuizWithSAI:
             self.btn_play.color = '#5B5FED'
             self.btn_play.hovercolor = '#4B4FDD'
             self.status_text.set_text('Stopped.')
+            self.fig.canvas.draw_idle()
         else:
             self.is_playing = True
             
@@ -310,6 +305,7 @@ class ToneIntroductionQuizWithSAI:
             if audio_path.exists():
                 raw_audio, _ = librosa.load(str(audio_path), sr=self.sample_rate)
                 self.audio_data, _ = librosa.effects.trim(raw_audio, top_db=25)
+                # Add silence padding for smoother looping
                 self.audio_data = np.pad(self.audio_data, (0, 2000), 'constant') 
                 
                 self.current_frame_index = 0
@@ -326,6 +322,7 @@ class ToneIntroductionQuizWithSAI:
             self.btn_play.hovercolor = '#c0392b'
             self.status_text.set_text('⟳ Looping Audio & SAI...')
             self.status_text.set_color('#3498db')
+            self.fig.canvas.draw_idle()
 
     def _select_random_item(self):
         self.is_playing = False
@@ -382,13 +379,15 @@ class ToneIntroductionQuizWithSAI:
         }
         self.results.append(result)
         
-        self.answer_text.set_text(f"Your answer: {user_answer}")
+        #self.answer_text.set_text(f"Your answer: {user_answer}")
         if is_correct:
-            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_text('CORRECT!')
             self.feedback_text.set_color('#27ae60')
         else:
-            self.feedback_text.set_text(f'✗ INCORRECT (Correct: {correct_answer})')
+            self.feedback_text.set_text(f'INCORRECT (Correct: {correct_answer})')
             self.feedback_text.set_color('#e74c3c')
+            
+        self.fig.canvas.draw_idle()
 
     def next_word(self, event):
         self.question_count += 1
@@ -400,10 +399,8 @@ class ToneIntroductionQuizWithSAI:
             self.status_text.set_text('Quiz Completed!')
             self.status_text.set_color('blue')
             
-            # --- FIX: Launch Next Script ---
             plt.close(self.fig)
             self._launch_next_script()
-            # -------------------------------
         else:
             self._select_random_item()
 
@@ -430,11 +427,8 @@ class ToneIntroductionQuizWithSAI:
 
     def _launch_next_script(self):
         """Finds and launches the two-syllabus recognition script"""
-        
-        # 1. Check specific absolute path first (as requested)
         specific_path = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\tone_recognition_SAI_animation_two_syllabus.py")
         
-        # 2. Check relative locations (fallback)
         script_dir = Path(__file__).parent.resolve()
         filename = "tone_recognition_SAI_animation_two_syllabus.py"
         
@@ -462,9 +456,10 @@ class ToneIntroductionQuizWithSAI:
             print(f"   Checked: {specific_path} and current folders.")
 
     def show(self):
-        # --- FIX 2: Added cache_frame_data=False to silence warning ---
+        # IMPORTANT: Set blit=False to ensure buttons work reliably
+        # Increased interval to 50ms (20fps) to reduce CPU load
         self.ani = animation.FuncAnimation(
-            self.fig, self.update_animation, interval=20, blit=True, cache_frame_data=False
+            self.fig, self.update_animation, interval=50, blit=False, cache_frame_data=False
         )
         plt.show()
 
