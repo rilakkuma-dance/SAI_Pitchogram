@@ -78,7 +78,7 @@ class ToneSpectrogramQuiz:
 
     def _scan_audio_folder(self):
         items = []
-        files = sorted(list(self.audio_base_path.glob("*.mp3")))
+        files = sorted(list(self.audio_base_path.glob("*.wav")))
         for f in files:
             try:
                 parts = f.stem.split('_') 
@@ -179,15 +179,16 @@ class ToneSpectrogramQuiz:
             
             # Load with librosa
             self.current_audio_y, self.current_audio_sr = librosa.load(str(fpath), sr=None)
+            self.current_audio_y, _ = librosa.effects.trim(self.current_audio_y, top_db=20)
             
             # Generate Mel Spectrogram
-            mel_spec = librosa.feature.melspectrogram(y=self.current_audio_y, sr=self.current_audio_sr, n_mels=128, fmax=8000)
+            mel_spec = librosa.feature.melspectrogram(y=self.current_audio_y, sr=self.current_audio_sr, n_mels=128, fmin=50, fmax=4000)
             log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
             
             # Update Plot
             self.im_spec.set_data(log_mel_spec)
             self.im_spec.set_clim(vmin=log_mel_spec.min(), vmax=log_mel_spec.max())
-            self.im_spec.set_extent([0, log_mel_spec.shape[1], 0, 8000]) 
+            self.im_spec.set_extent([0, log_mel_spec.shape[1], 0, 4000]) 
             self.ax_spec.axis('on')
             self.ax_spec.set_aspect('auto')
             

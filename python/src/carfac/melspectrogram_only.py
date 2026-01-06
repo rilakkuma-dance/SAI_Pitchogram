@@ -19,7 +19,7 @@ ref = Path("carfac/reference")
 # Check what files actually exist
 print("=== WOMEN FOLDER ===")
 if (ref / "women").exists():
-    women_files = sorted([f.name for f in (ref / "women").glob("*.mp3")])
+    women_files = sorted([f.name for f in (ref / "women").glob("*.wav")])
     print(f"Total files: {len(women_files)}")
     print("First 10:", women_files[:10])
 else:
@@ -27,7 +27,7 @@ else:
 
 print("\n=== MEN FOLDER ===")
 if (ref / "men").exists():
-    men_files = sorted([f.name for f in (ref / "men").glob("*.mp3")])
+    men_files = sorted([f.name for f in (ref / "men").glob("*.wav")])
     print(f"Total files: {len(men_files)}")
     print("First 10:", men_files[:10])
 else:
