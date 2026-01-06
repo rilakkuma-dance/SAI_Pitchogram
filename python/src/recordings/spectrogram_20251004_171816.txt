@@ -1,9 +1,0 @@
-Timestamp: 20251004_171816
-Recording: spectrogram_20251004_171816.wav
-Item ID: 4
-Type: word
-Chinese: 去
-Pinyin: qù
-English: to go
-Set Number: 1
-Item Position: 2/5

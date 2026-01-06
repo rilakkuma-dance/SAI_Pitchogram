@@ -1,9 +1,0 @@
-Timestamp: 20251006_111717
-Recording: mel_20251006_111717.wav
-Item ID: 5
-Type: sentence
-Chinese: 女人去买书
-Pinyin: Nǚrén qù mǎi shū
-English: The woman goes to buy books
-Set Number: 1
-Item Position: 4/5

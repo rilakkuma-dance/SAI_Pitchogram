@@ -1,9 +1,0 @@
-Timestamp: 20251004_161326
-Recording: 20251004_161326.wav
-Item ID: 1
-Type: word
-Chinese: 书
-Pinyin: shū
-English: book
-Set Number: 1
-Item Position: 1/5

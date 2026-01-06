@@ -1,9 +1,0 @@
-Timestamp: 20251005_175417
-Recording: mel_20251005_175417.wav
-Item ID: 6
-Type: word
-Chinese: 喜欢
-Pinyin: xǐhuān
-English: to like
-Set Number: 1
-Item Position: 3/5

@@ -1,9 +1,0 @@
-Timestamp: 20251021_172117
-Recording: mel_20251021_172117.wav
-Item ID: 9
-Type: word
-Chinese: 书店
-Pinyin: shūdiàn
-English: bookstore
-Set Number: 1
-Item Position: 1/3

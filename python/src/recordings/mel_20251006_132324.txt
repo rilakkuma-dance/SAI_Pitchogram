@@ -1,9 +1,0 @@
-Timestamp: 20251006_132324
-Recording: mel_20251006_132324.wav
-Item ID: 25
-Type: sentence
-Chinese: 请坐在椅子上。
-Pinyin: Qǐng zuò zài yǐzi shàng.
-English: Please sit on the chair
-Set Number: 1
-Item Position: 4/5

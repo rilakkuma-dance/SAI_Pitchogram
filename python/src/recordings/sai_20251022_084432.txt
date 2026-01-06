@@ -1,2 +1,0 @@
-Chinese,Pinyin,English,Reference Tone,Detected Tone,Confidence,Is Correct
-女人,nǚrén,woman,3,3,1.00,True
