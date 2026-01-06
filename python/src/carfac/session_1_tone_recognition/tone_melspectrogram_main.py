@@ -3,7 +3,6 @@ from matplotlib.widgets import Button
 import matplotlib.image as mpimg
 import sys
 from pathlib import Path
-import subprocess
 
 class TonePlayer:
     def __init__(self):
@@ -23,19 +22,17 @@ class TonePlayer:
         # Try multiple possible locations
         possible_locations = [
             script_dir / 'image',
-            script_dir / 'images',
             script_dir.parent / 'image',
-            script_dir.parent / 'images',
             Path.cwd() / 'image',
             Path.cwd() / 'images',
         ]
         
         tone_images = {}
         filenames = {
-            1: 'tone1_SAI.png',
-            2: 'tone2_SAI.png',
-            3: 'tone3_SAI.png',
-            4: 'tone4_SAI.png',
+            1: 'tone1_mel.png',
+            2: 'tone2_mel.png',
+            3: 'tone3_mel.png',
+            4: 'tone4_mel.png',
         }
         
         # Try to find images in each location
@@ -83,7 +80,7 @@ class TonePlayer:
         for i in range(4):
             x_pos = i
             
-            # Tone box (visual representation area) - Thinner width
+            # Tone box (visual representation area)
             box_ax = self.fig.add_axes([0.10 + i * 0.23, 0.45, 0.05, 0.40])
             box_ax.axis('off')
             
@@ -134,7 +131,7 @@ class TonePlayer:
             
             print(f"✓ Displayed image for Tone {tone_num}: {Path(image_path).name}")
         except Exception as e:
-            print(f"Error loading image for Tone {tone_num}: {e}")
+            print(f"⚠️ Error loading image for Tone {tone_num}: {e}")
             import traceback
             traceback.print_exc()
             
@@ -150,24 +147,19 @@ class TonePlayer:
         print("\n✓ Closing Tone Player")
         plt.close(self.fig)
         
-        # Find and launch tone_recognition_SAI_animation_one_syllabus.py
+        # Find and launch the next script
         self._launch_next_script()
     
     def _launch_next_script(self):
-        """Find and launch tone_recognition_SAI_animation_one_syllabus.py"""
+        """Find and launch the next python script"""
         script_dir = Path(__file__).parent.resolve()
-        target_filename = 'tone_recognition_SAI_animation_one_syllabus.py'
         
-        # 1. Check specific absolute path first (as requested)
-        specific_path = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\session_1_tone_recognition\tone_recognition_SAI_animation_one_syllabus.py")
-
         # Try multiple possible locations
         possible_locations = [
-            specific_path,
-            script_dir / target_filename,
-            script_dir.parent / target_filename,
-            script_dir.parent.parent.parent / 'src' / 'carfac' / target_filename,
-            Path.cwd() / target_filename,
+            script_dir / 'tone_recognition_melspectrogram_one_syllabus.py',
+            script_dir.parent / 'tone_recognition_melspectrogram_one_syllabus.py',
+            script_dir.parent.parent.parent / 'src' / 'carfac' / 'tone_recognition_melspectrogram_one_syllabus.py',
+            Path.cwd() / 'tone_recognition_melspectrogram_one_syllabus.py',
         ]
         
         next_script = None
@@ -180,11 +172,12 @@ class TonePlayer:
         if next_script:
             try:
                 print(f"🚀 Launching: {next_script.name}\n")
+                import subprocess
                 subprocess.Popen([sys.executable, str(next_script)])
             except Exception as e:
                 print(f"❌ Error launching script: {e}")
         else:
-            print(f"\n⚠️ Could not find {target_filename}")
+            print("\n⚠️ Could not find tone_recognition_melspectrogram_one_syllabus.py")
             print("  Searched in:")
             for loc in possible_locations:
                 print(f"  - {loc}")
@@ -199,7 +192,7 @@ if __name__ == '__main__':
     print("MANDARIN TONE VISUALIZER")
     print("="*60)
     print("View the tone patterns above.")
-    print("Click OK to close the application and proceed.")
+    print("Click OK to proceed to the next step.")
     print("="*60 + "\n")
     
     player = TonePlayer()
