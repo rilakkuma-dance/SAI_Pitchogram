@@ -181,7 +181,7 @@ class ToneIntroductionQuizWithSAI:
         # -------------------------------------------------------
         
         # ### EDIT YOUR FILE NAME HERE ###
-        test_filename = "11_火_3.mp3" 
+        test_filename = "14_去年_42.wav" 
         
         self.vocab_items = [
             {
