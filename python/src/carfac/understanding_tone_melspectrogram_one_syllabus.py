@@ -63,15 +63,15 @@ class ToneSpectrogramQuiz:
 
     def _find_audio_folder(self):
         script_dir = Path(__file__).parent.resolve()
-        potential_path = script_dir / 'mandarin_audio_session1'
+        potential_path = script_dir / 'mandarin_audio_one_syllabus'
         if potential_path.exists(): return potential_path
-        potential_path = script_dir.parent / 'mandarin_audio_session1'
+        potential_path = script_dir.parent / 'mandarin_audio_one_syllabus'
         if potential_path.exists(): return potential_path
 
-        print("⚠️ Could not auto-detect 'mandarin_mandarin_audio_session1audio' folder.")
+        print("⚠️ Could not auto-detect 'mandarin_mandarin_audio_one_syllabus' folder.")
         root = tk.Tk()
         root.withdraw() 
-        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_session1' folder")
+        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_one_syllabus' folder")
         root.destroy()
         if folder_selected: return Path(folder_selected)
         return None
@@ -232,10 +232,10 @@ class ToneSpectrogramQuiz:
         self.answer_text.set_text(f"Your answer: {user_input}")
         
         if is_correct:
-            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_text('CORRECT!')
             self.feedback_text.set_color('#27ae60')
         else:
-            self.feedback_text.set_text(f'✗ Wrong (Correct: {correct_tone})')
+            self.feedback_text.set_text(f'Wrong (Correct: {correct_tone})')
             self.feedback_text.set_color('#e74c3c')
             
         # 1. Show Text Info
