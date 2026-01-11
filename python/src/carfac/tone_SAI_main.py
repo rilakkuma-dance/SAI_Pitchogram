@@ -150,16 +150,16 @@ class TonePlayer:
         print("\n✓ Closing Tone Player")
         plt.close(self.fig)
         
-        # Find and launch tone_recognition_SAI_animation_one_syllabus.py
+        # Find and launch tone_recognition_SAI_animation_one_syllable.py
         self._launch_next_script()
     
     def _launch_next_script(self):
-        """Find and launch tone_recognition_SAI_animation_one_syllabus.py"""
+        """Find and launch tone_recognition_SAI_animation_one_syllable.py"""
         script_dir = Path(__file__).parent.resolve()
-        target_filename = 'tone_recognition_SAI_animation_one_syllabus.py'
+        target_filename = 'tone_recognition_SAI_animation_one_syllable.py'
         
         # 1. Check specific absolute path first (as requested)
-        specific_path = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\session_1_tone_recognition\tone_recognition_SAI_animation_one_syllabus.py")
+        specific_path = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\session_1_tone_recognition\tone_recognition_SAI_animation_one_syllable.py")
 
         # Try multiple possible locations
         possible_locations = [

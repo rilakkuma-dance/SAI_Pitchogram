@@ -1,0 +1,35 @@
+MANDARIN TONE QUIZ RESULTS
+==========================
+Date: 2026-01-10 23:34:50.935149
+Score: 2/5
+
+Q1: 面包 (miànbāo)
+   Audio File: 08_面包_41.wav
+   Correct Tone: 41 | Your Answer: 41
+   Result: CORRECT
+   Time: 11.35s
+------------------------------
+Q2: 美国 (měiguó)
+   Audio File: 07_美国_32.wav
+   Correct Tone: 32 | Your Answer: 12
+   Result: WRONG
+   Time: 7.90s
+------------------------------
+Q3: 老师 (lǎoshī)
+   Audio File: 06_老师_31.wav
+   Correct Tone: 31 | Your Answer: 31
+   Result: CORRECT
+   Time: 6.54s
+------------------------------
+Q4: 电脑 (diànnǎo)
+   Audio File: 10_电脑_43.wav
+   Correct Tone: 43 | Your Answer: 13
+   Result: WRONG
+   Time: 7.29s
+------------------------------
+Q5: 问题 (wèntí)
+   Audio File: 09_问题_42.wav
+   Correct Tone: 42 | Your Answer: 24
+   Result: WRONG
+   Time: 3.28s
+------------------------------

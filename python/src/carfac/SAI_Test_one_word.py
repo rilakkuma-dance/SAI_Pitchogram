@@ -146,8 +146,8 @@ class ToneIntroductionQuizWithSAI:
         if audio_base_path is None:
             script_dir = Path(__file__).parent.resolve()
             # Try to find 'mandarin_audio', otherwise use current dir
-            if (script_dir / 'mandarin_audio_session2').exists():
-                audio_base_path = script_dir / 'mandarin_audio_session2'
+            if (script_dir / 'mandarin_audio_two_syllable').exists():
+                audio_base_path = script_dir / 'mandarin_audio_two_syllable'
             else:
                 audio_base_path = script_dir
         

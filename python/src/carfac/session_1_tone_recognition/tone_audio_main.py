@@ -210,16 +210,16 @@ class TonePlayer:
         # Try multiple possible locations
         possible_locations = [
             # Same directory as this script
-            script_dir / 'tone_recognition_audio_one_syllabus.py',
+            script_dir / 'tone_recognition_audio_one_syllable.py',
             
             # Parent directory
-            script_dir.parent / 'tone_recognition_audio_one_syllabus.py',
+            script_dir.parent / 'tone_recognition_audio_one_syllable.py',
             
             # Specific carfac location
-            script_dir.parent.parent.parent / 'src' / 'carfac' / 'tone_recognition_audio_one_syllabus.py',
+            script_dir.parent.parent.parent / 'src' / 'carfac' / 'tone_recognition_audio_one_syllable.py',
             
             # Current working directory
-            Path.cwd() / 'tone_recognition_audio_one_syllabus.py',
+            Path.cwd() / 'tone_recognition_audio_one_syllable.py',
         ]
         
         next_script = None

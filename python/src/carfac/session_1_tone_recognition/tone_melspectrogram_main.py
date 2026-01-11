@@ -156,10 +156,10 @@ class TonePlayer:
         
         # Try multiple possible locations
         possible_locations = [
-            script_dir / 'tone_recognition_melspectrogram_one_syllabus.py',
-            script_dir.parent / 'tone_recognition_melspectrogram_one_syllabus.py',
-            script_dir.parent.parent.parent / 'src' / 'carfac' / 'tone_recognition_melspectrogram_one_syllabus.py',
-            Path.cwd() / 'tone_recognition_melspectrogram_one_syllabus.py',
+            script_dir / 'tone_recognition_melspectrogram_one_syllable.py',
+            script_dir.parent / 'tone_recognition_melspectrogram_one_syllable.py',
+            script_dir.parent.parent.parent / 'src' / 'carfac' / 'tone_recognition_melspectrogram_one_syllable.py',
+            Path.cwd() / 'tone_recognition_melspectrogram_one_syllable.py',
         ]
         
         next_script = None
@@ -177,7 +177,7 @@ class TonePlayer:
             except Exception as e:
                 print(f"❌ Error launching script: {e}")
         else:
-            print("\n⚠️ Could not find tone_recognition_melspectrogram_one_syllabus.py")
+            print("\n⚠️ Could not find tone_recognition_melspectrogram_one_syllable.py")
             print("  Searched in:")
             for loc in possible_locations:
                 print(f"  - {loc}")
