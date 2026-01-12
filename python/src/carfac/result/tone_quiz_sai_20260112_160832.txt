@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-12 16:08:32.864605
+Score: 0/5
+
+Q1: 电脑 (diànnǎo)
+   Audio File: 10_电脑_43.wav
+   Correct Tone: 43 | Your Answer: 2
+   Result: WRONG
+   Time: 7.95s
+------------------------------
+Q2: 明天 (míngtiān)
+   Audio File: 03_明天_21.wav
+   Correct Tone: 21 | Your Answer: 3
+   Result: WRONG
+   Time: 0.23s
+------------------------------
+Q3: 牛奶 (niúnǎi)
+   Audio File: 04_牛奶_23.wav
+   Correct Tone: 23 | Your Answer: 4
+   Result: WRONG
+   Time: 0.73s
+------------------------------
+Q4: 问题 (wèntí)
+   Audio File: 09_问题_42.wav
+   Correct Tone: 42 | Your Answer: 5
+   Result: WRONG
+   Time: 0.48s
+------------------------------
+Q5: 美国 (měiguó)
+   Audio File: 07_美国_32.wav
+   Correct Tone: 32 | Your Answer: 5
+   Result: WRONG
+   Time: 0.14s
+------------------------------

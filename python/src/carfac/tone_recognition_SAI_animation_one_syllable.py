@@ -203,50 +203,189 @@ class ToneIntroductionQuizWithSAI:
             self._select_random_item()
         
     def _setup_interface(self):
-        main_ax = self.fig.add_axes([0.1, 0.05, 0.8, 0.9])
-        main_ax.axis('off')
-        
-        # SAI Image
-        self.ax_sai = self.fig.add_axes([0.15, 0.42, 0.7, 0.38])
+        # 1. Main container - hidden axis for text placement
+        self.ax_ui = self.fig.add_axes([0, 0, 1, 1])
+        self.ax_ui.axis('off')
+
+        # 2. Spectrogram/SAI Area (Top)
+        # Positioned to leave room for the "Question X/X" header
+        self.ax_sai = self.fig.add_axes([0.12, 0.58, 0.76, 0.32])
         self.im_sai = self.ax_sai.imshow(
-            self.vis.img, aspect='auto', origin='upper', cmap='inferno', 
-            interpolation='bilinear', extent=[0, self.sai_params.sai_width, 0, self.n_channels],
-            vmin=0, vmax=255
+            self.vis.img, aspect='auto', origin='upper', cmap='inferno',
+            extent=[0, 400, 0, self.processor.n_channels]
         )
-        self.ax_sai.axis('off')
+        # Note: In the image, the axes are visible but dark
+        self.ax_sai.set_facecolor('black')
+        self.ax_sai.tick_params(colors='#666666', labelsize=8)
+
+        # 3. Header and Subtitles
+        self.progress_text = self.ax_ui.text(0.5, 0.50, 'Question 1/5', 
+                                            ha='center', fontsize=12, color='#7f8c8d')
+        self.status_text = self.ax_ui.text(0.5, 0.46, 'Click Play Loop to start', 
+                                          ha='center', fontsize=10, color='#7f8c8d')
+
+        # 5. Tone Input Box
+        # Matches the long white box in the image
+        self.ax_ui.text(0.28, 0.33, 'Tone:', ha='right', va='center', fontsize=10)
+        ax_input = plt.axes([0.3, 0.30, 0.4, 0.06]) 
+        self.text_input = TextBox(ax_input, '', color='white', hovercolor='#f9f9f9')
+
+        # 6. Feedback Row
+        self.ax_ui.text(0.35, 0.25, 'Your answer:', ha='right', fontsize=10, color='#7f8c8d')
+        self.answer_text = self.ax_ui.text(0.36, 0.25, '', ha='left', fontsize=10, weight='bold')
+        self.feedback_text = self.ax_ui.text(0.65, 0.25, 'Feedback', ha='left', fontsize=10, color='#7f8c8d')
+
+        # 7. Big Play Button (Bottom)
+        self.ax_btn = plt.axes([0.3, 0.12, 0.4, 0.08])
+        self.btn_action = Button(self.ax_btn, 'Play Loop', color='#5B5FED', hovercolor='#4B4FDD')
+        self.btn_action.label.set_color('white')
+        self.btn_action.label.set_weight('bold')
+        self.btn_action.label.set_fontsize(14)
+        self.btn_action.on_clicked(self._handle_button_click)
+
+    def _check_answer(self):
+        user_input = self.text_input.text.strip()
+        if not user_input: return
+
+        correct_tone = str(self.current_item['tone'])
+        is_correct = (user_input == correct_tone)
+        self.answered = True
+
+        # Update the small "Your answer" display
+        self.answer_text.set_text(user_input)
+        self.answer_text.set_color('black')
+
+        # Update the "Feedback" label
+        if is_correct:
+            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_color('#27ae60')
+        else:
+            self.feedback_text.set_text(f'✗ WRONG (Correct: {correct_tone})')
+            self.feedback_text.set_color('#e74c3c')
+            
+        # Update Main Button to "Next Item"
+        self.btn_action.label.set_text('Next Item')
+        self.btn_action.ax.set_facecolor('#27ae60') # Turns Green
         
-        # Labels
-        self.progress_text = main_ax.text(0.5, 0.82, '', fontsize=11, ha='center', weight='bold', color='#7f8c8d')
-        self.status_text = main_ax.text(0.5, 0.30, 'Click Play to start loop', fontsize=9, ha='center', color='#7f8c8d')
+        # Audio Playback
+        self.status_text.set_text(f"Playing: {self.current_item['chinese']} ({self.current_item['pinyin']})")
+        self.fig.canvas.draw_idle()
         
-        # Play Button
-        ax_play = plt.axes([0.35, 0.34, 0.3, 0.05])
-        self.btn_play = Button(ax_play, '▶ Play Loop', color='#5B5FED', hovercolor='#4B4FDD')
-        self.btn_play.label.set_color('white')
-        self.btn_play.label.set_weight('bold')
-        self.btn_play.on_clicked(self.toggle_play)
+        threading.Thread(target=lambda: sd.play(self.current_audio_y, self.current_audio_sr), daemon=True).start()
+
+    def _start_loop(self):
+        """Loads the audio data and starts the cycling playback and SAI animation."""
+        if not self.current_item: return
+
+        # Combine correct path with filename
+        audio_path = self.audio_base_path / self.current_item['audio']
         
-        # Inputs
-        main_ax.text(0.5, 0.25, 'Enter Tone Numbers', fontsize=10, ha='center', color='#666666', weight='bold')
-        main_ax.text(0.5, 0.21, '(Example: for "tiānqì" type "14")', fontsize=9, ha='center', color='#999999')
-        ax_input = plt.axes([0.3, 0.16, 0.4, 0.05])
-        self.text_input = TextBox(ax_input, '', initial='', color='white', hovercolor='#f9f9f9')
+        if audio_path.exists():
+            try:
+                # 1. Load and trim audio
+                raw_audio, _ = librosa.load(str(audio_path), sr=self.sample_rate)
+                self.audio_data, _ = librosa.effects.trim(raw_audio, top_db=25)
+                
+                # 2. Add silence padding for smoother looping
+                self.audio_data = np.pad(self.audio_data, (0, 2000), 'constant') 
+                
+                # 3. Reset playback indices and start sound
+                self.current_frame_index = 0
+                self.is_playing = True
+                sd.play(self.audio_data, self.sample_rate)
+                
+                # 4. Handle Timer for results
+                if not self.timer_started:
+                    self.question_start_time = time.time()
+                    self.timer_started = True
+                
+                # 5. UI Updates: Transform button to "Check Answer"
+                self.btn_action.label.set_text('Check Answer')
+                self.btn_action.ax.set_facecolor('#3498db') # Turns Blue
+                self.status_text.set_text('⟳ Looping Audio & SAI...')
+                self.status_text.set_color('#3498db')
+                self.fig.canvas.draw_idle()
+                
+            except Exception as e:
+                print(f"Error starting loop: {e}")
+                self.status_text.set_text('Audio Error!')
+        else:
+            print(f"Error: Audio file not found at {audio_path}")
+            self.status_text.set_text('File Not Found!')
+
+    def _handle_button_click(self, event):
+        """Unified State Machine: Play -> Check -> Next"""
+        if not self.is_playing and not self.answered:
+            # Step 1: Start the audio and animation
+            self._start_loop()
+        elif not self.answered:
+            # Step 2: Validate the user input
+            # Call your check logic (make sure it reads self.text_input.text)
+            self.check_answer(self.text_input.text) 
+        else:
+            # Step 3: Clear feedback and load new word
+            self._next_word()
+
+    def _check_answer_logic(self):
+        """Validates input, provides feedback, and transforms button to 'Next'"""
+        text = self.text_input.text.strip()
+        if not text:
+            self.status_text.set_text('⚠️ Please enter a tone number first!')
+            self.fig.canvas.draw_idle()
+            return
+
+        # 1. Logic Processing
+        user_answer = text.replace(' ', '').replace(',', '').replace('-', '')
+        correct_answer = self.current_item['tone'].replace(',', '').replace('-', '')
         
-        self.answer_text = main_ax.text(0.5, 0.12, '', fontsize=12, ha='center', weight='bold', color='#34495e')
-        self.feedback_text = main_ax.text(0.5, 0.08, '', fontsize=14, ha='center', weight='bold')
+        if self.question_start_time:
+            self.question_elapsed_time = time.time() - self.question_start_time
         
-        # Control Buttons
-        ax_check = plt.axes([0.15, 0.01, 0.3, 0.04])
-        self.btn_check = Button(ax_check, 'Check Answer', color='#3498db', hovercolor='#2980b9')
-        self.btn_check.label.set_color('white')
-        self.btn_check.on_clicked(self.check_answer_button)
+        self.answered = True
+        is_correct = (user_answer == correct_answer)
         
-        ax_next = plt.axes([0.55, 0.01, 0.3, 0.04])
-        self.btn_next = Button(ax_next, 'Next Word', color='#27ae60', hovercolor='#229954')
-        self.btn_next.label.set_color('white')
-        self.btn_next.on_clicked(self.next_word)
+        # 2. Store Result
+        self.results.append({
+            'is_correct': is_correct,
+            'user_answer': user_answer,
+            'time_seconds': self.question_elapsed_time,
+            'chinese': self.current_item['chinese'],
+            'pinyin': self.current_item['pinyin'],
+            'audio_file': self.current_item['audio'],
+            'correct_tone': correct_answer
+        })
         
-        self._update_progress()
+        # 3. UI Feedback
+        if is_correct:
+            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_color('#27ae60')
+        else:
+            self.feedback_text.set_text(f'✗ INCORRECT (Correct: {correct_answer})')
+            self.feedback_text.set_color('#e74c3c')
+            
+        self.answer_text.set_text(f"Target: {self.current_item['chinese']} ({self.current_item['pinyin']})")
+        
+        # 4. Button Transformation: Change to 'Next Word'
+        self.btn_action.label.set_text('Next Word')
+        self.btn_action.ax.set_facecolor('#27ae60') # Green
+        self.status_text.set_text('Click Next Word to continue')
+        self.status_text.set_color('#27ae60')
+        
+        self.fig.canvas.draw_idle()
+
+    def _next_word(self):
+        """Advances the quiz and resets the UI state"""
+        self.question_count += 1
+        if self.question_count >= self.max_questions:
+            print("\n✓ Quiz completed!")
+            self.is_playing = False
+            sd.stop()
+            self._save_results_to_file()
+            plt.close(self.fig)
+            self._launch_next_script()
+        else:
+            # Re-runs the selection logic which resets the button to 'Play Loop'
+            self._select_random_item()
 
     def update_animation(self, frame):
         if not self.is_playing or self.audio_data is None:
@@ -291,10 +430,6 @@ class ToneIntroductionQuizWithSAI:
         if self.is_playing:
             self.is_playing = False
             sd.stop()
-            self.btn_play.label.set_text('▶ Play Loop')
-            self.btn_play.color = '#5B5FED'
-            self.btn_play.hovercolor = '#4B4FDD'
-            self.status_text.set_text('Stopped.')
             self.fig.canvas.draw_idle()
         else:
             self.is_playing = True
@@ -326,39 +461,42 @@ class ToneIntroductionQuizWithSAI:
 
     def _select_random_item(self):
         self.is_playing = False
+        self.answered = False
+        self.timer_started = False
+        self.question_start_time = None
         sd.stop()
+
+        # 1. CLEAR FEEDBACK LABELS (Delete previous results from screen)
+        self.answer_text.set_text('')
+        self.feedback_text.set_text('Feedback')
+        self.feedback_text.set_color('#7f8c8d')  # Reset to neutral gray
+
+        # 2. Reset Visuals and Inputs
         self.vis.img[:] = 0
         self.im_sai.set_data(self.vis.img)
-        self.btn_play.label.set_text('▶ Play Loop')
-        self.btn_play.color = '#5B5FED'
         self.text_input.set_val('')
-        self.answer_text.set_text('')
-        self.feedback_text.set_text('')
+        
+        # 3. Reset Button to Initial State
+        self.btn_action.label.set_text('Play SAI')
+        self.btn_action.ax.set_facecolor('#5B5FED') # Indigo
+        
         self.status_text.set_text('Click Play Loop to start')
         self.status_text.set_color('#7f8c8d')
         
+        # 4. Pick next item
         if not self.vocab_items: return
-
         random_item = random.choice(self.vocab_items)
         while random_item['id'] in self.used_words and len(self.used_words) < len(self.vocab_items):
             random_item = random.choice(self.vocab_items)
         
         self.current_item = random_item
         self.used_words.add(random_item['id'])
-        self.answered = False
-        self.timer_started = False
-        self.question_start_time = None
         
         self._update_progress()
-        print(f"\nTarget: {self.current_item['pinyin']} (Tone: {self.current_item['tone']})")
+        self.fig.canvas.draw_idle()
 
     def _update_progress(self):
         self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
-
-    def check_answer_button(self, event):
-        text = self.text_input.text
-        if not text.strip(): return
-        self.check_answer(text)
 
     def check_answer(self, text):
         if not self.current_item or self.answered: return
@@ -392,6 +530,9 @@ class ToneIntroductionQuizWithSAI:
             self.feedback_text.set_text(f'INCORRECT (Correct: {correct_answer})')
             self.feedback_text.set_color('#e74c3c')
             
+        self.btn_action.label.set_text('Next Word')
+        self.btn_action.ax.set_facecolor('#27ae60') # Green
+        
         self.fig.canvas.draw_idle()
 
     def next_word(self, event):

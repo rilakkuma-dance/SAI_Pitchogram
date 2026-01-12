@@ -36,7 +36,7 @@ class ToneIntroductionQuiz:
         self.vocab_items = self._scan_audio_folder()
 
         if not self.vocab_items:
-            print("⚠️ Folder found, but no .mp3 files inside!")
+            print("⚠️ Folder found, but no .wav files inside!")
             self.vocab_items = [{"id":0, "chinese":"Error", "pinyin":"-", "tone":"0", "audio": None}]
 
         # 3. GAME STATE
@@ -64,7 +64,6 @@ class ToneIntroductionQuiz:
         potential_path = script_dir.parent / 'mandarin_audio_two_syllable'
         if potential_path.exists(): return potential_path
 
-        print("⚠️ Could not auto-detect 'mandarin_audio_two_syllable' folder.")
         root = tk.Tk()
         root.withdraw() 
         folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_two_syllable' folder")
@@ -101,11 +100,9 @@ class ToneIntroductionQuiz:
         self.ax = self.fig.add_axes([0.1, 0.1, 0.8, 0.8])
         self.ax.axis('off')
         
-        self.ax.text(0.5, 0.95, 'Mandarin Tone Quiz', fontsize=18, ha='center', weight='bold')
-        self.progress_text = self.ax.text(0.5, 1.00, '', fontsize=12, ha='center', color='#7f8c8d')
+        self.progress_text = self.ax.text(0.5, 0.35, '', fontsize=12, ha='center', color='#7f8c8d')
         
-        self.status_text = self.ax.text(0.5, 0.35, 'Click Play to start', fontsize=10, ha='center', color='#7f8c8d')
-        self.ax.text(0.5, 0.28, 'Type tone numbers (e.g. 14)', fontsize=11, ha='center', color='#666666')
+        self.status_text = self.ax.text(0.5, 0.28, 'Click Play to start', fontsize=10, ha='center', color='#7f8c8d')
 
         ax_input = plt.axes([0.3, 0.20, 0.4, 0.06])
         self.text_input = TextBox(ax_input, '', color='white', hovercolor='#f9f9f9')
@@ -113,17 +110,17 @@ class ToneIntroductionQuiz:
         self.answer_text = self.ax.text(0.5, 0.14, '', fontsize=14, ha='center', weight='bold', color='#34495e')
         self.feedback_text = self.ax.text(0.5, 0.08, '', fontsize=16, ha='center', weight='bold')
 
-        self.btn_play = Button(plt.axes([0.35, 0.42, 0.3, 0.07]), 'Play Audio', color='#5B5FED', hovercolor='#4B4FDD')
+        # Play Button
+        self.ax_play = plt.axes([0.35, 0.42, 0.3, 0.07])
+        self.btn_play = Button(self.ax_play, 'Play Audio', color='#5B5FED', hovercolor='#4B4FDD')
         self.btn_play.label.set_color('white')
         self.btn_play.on_clicked(self.play_audio)
 
-        self.btn_check = Button(plt.axes([0.15, 0.02, 0.3, 0.05]), 'Check', color='#3498db', hovercolor='#2980b9')
-        self.btn_check.label.set_color('white')
-        self.btn_check.on_clicked(self.check_answer_button)
-
-        self.btn_next = Button(plt.axes([0.55, 0.02, 0.3, 0.05]), 'Next', color='#27ae60', hovercolor='#229954')
-        self.btn_next.label.set_color('white')
-        self.btn_next.on_clicked(self.next_word)
+        # Single Action Button (Check then Next)
+        self.ax_action = plt.axes([0.3, 0.02, 0.4, 0.06])
+        self.btn_action = Button(self.ax_action, 'Check', color='#3498db', hovercolor='#2980b9')
+        self.btn_action.label.set_color('white')
+        self.btn_action.on_clicked(self._handle_action)
 
     def _select_random_item(self):
         available = [i for i in self.vocab_items if i['id'] not in self.used_words]
@@ -138,10 +135,13 @@ class ToneIntroductionQuiz:
         self.timer_started = False
         self.question_start_time = None
         
+        # Reset Button appearance
+        self.btn_action.label.set_text('Check')
+        self.btn_action.ax.set_facecolor('#3498db')
+        
         self.text_input.set_val('')
         self.answer_text.set_text('')
         self.feedback_text.set_text('')
-        
         self.status_text.set_text('Click Play to hear the word')
         self.status_text.set_color('#7f8c8d')
         self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
@@ -153,7 +153,6 @@ class ToneIntroductionQuiz:
         def _thread_run():
             self.is_playing = True
             self.btn_play.label.set_text('...')
-            self.status_text.set_text('Playing...')
             self.fig.canvas.draw_idle()
             
             try:
@@ -162,14 +161,11 @@ class ToneIntroductionQuiz:
                 sd.play(data, sr)
                 sd.wait()
                 
-                # Start internal timer
                 self.question_start_time = time.time()
                 self.timer_started = True
-                
                 self.status_text.set_text('Ready for answer')
                 self.status_text.set_color('#27ae60')
             except Exception as e:
-                print(f"Error: {e}")
                 self.status_text.set_text('Audio Error')
             
             self.is_playing = False
@@ -178,18 +174,71 @@ class ToneIntroductionQuiz:
 
         threading.Thread(target=_thread_run, daemon=True).start()
 
-    def check_answer_button(self, event):
+    def _handle_action(self, event):
+        if not self.answered:
+            self._check_answer()
+        else:
+            self.next_word(event)
+
+    def _check_answer(self):
+        if not self.timer_started:
+            self.status_text.set_text('⚠️ Listen first!')
+            self.fig.canvas.draw_idle()
+            return
+            
+        user_input = self.text_input.text.strip()
+        if not user_input: return
+
+        elapsed = time.time() - self.question_start_time
+        correct_tone = str(self.current_item['tone'])
+        is_correct = (user_input == correct_tone)
+        self.answered = True
+
+        self.results.append({
+            'word': self.current_item['chinese'],
+            'pinyin': self.current_item['pinyin'],
+            'tone': correct_tone,
+            'user': user_input,
+            'correct': is_correct,
+            'time': elapsed,
+            'file': self.current_item['audio']
+        })
+
+        # Update button to "Next" state
+        self.btn_action.label.set_text('Next Question')
+        self.btn_action.ax.set_facecolor('#27ae60')
+
+        self.answer_text.set_text(f"Your answer: {user_input}")
+        if is_correct:
+            self.feedback_text.set_text('CORRECT!')
+            self.feedback_text.set_color('#27ae60')
+        else:
+            self.feedback_text.set_text(f'Wrong (Correct: Tone {correct_tone})')
+            self.feedback_text.set_color('#e74c3c')
+            
+        self.status_text.set_text(f"{self.current_item['chinese']} - {self.current_item['pinyin']}")
+        self.status_text.set_color('black')
+        self.fig.canvas.draw_idle()
+
+    def next_word(self, event):
+        self.question_count += 1
+        if self.question_count >= self.max_questions:
+            self._save_results()
+            plt.close(self.fig)
+            self._launch_next_script()
+        else:
+            self._select_random_item()
+
+    def _check_answer(self):
         if not self.timer_started:
             self.status_text.set_text('⚠️ Listen first!')
             self.fig.canvas.draw_idle()
             return
             
         user_input = self.text_input.text.strip().replace(' ', '')
-        if not user_input or self.answered: return
+        if not user_input: return
 
-        # Stop internal timer calculation
         elapsed = time.time() - self.question_start_time
-        
         correct_tone = self.current_item['tone']
         is_correct = (user_input == correct_tone)
         self.answered = True
@@ -207,27 +256,25 @@ class ToneIntroductionQuiz:
         self.answer_text.set_text(f"Your answer: {user_input}")
         
         if is_correct:
-            self.feedback_text.set_text('✓ CORRECT!')
+            self.feedback_text.set_text('CORRECT!')
             self.feedback_text.set_color('#27ae60')
         else:
-            self.feedback_text.set_text(f'✗ Wrong (Correct: {correct_tone})')
+            self.feedback_text.set_text(f'Wrong (Correct: {correct_tone})')
             self.feedback_text.set_color('#e74c3c')
             
-        file_name = self.current_item['audio']
+        # Update Button to Next state
+        self.btn_action.label.set_text('Next Question')
+        self.btn_action.color = '#27ae60'
+        self.btn_action.hovercolor = '#229954'
+
         word_info = f"{self.current_item['chinese']} - {self.current_item['pinyin']}"
-        self.status_text.set_text(f"{word_info}\nFile: {file_name}")
+        self.status_text.set_text(word_info)
         self.status_text.set_color('black')
         self.fig.canvas.draw_idle()
 
     def _save_results(self):
-        """Saves results to the 'result' folder"""
-        # 1. Define folder path
         result_dir = Path(__file__).parent / 'result'
-        
-        # 2. Create folder if it doesn't exist
         result_dir.mkdir(exist_ok=True)
-        
-        # 3. Create filename
         timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
         filename = f"quiz_results_{timestamp}.txt"
         save_path = result_dir / filename
@@ -243,10 +290,8 @@ class ToneIntroductionQuiz:
             
             for idx, r in enumerate(self.results):
                 f.write(f"Q{idx+1}: {r['word']} ({r['pinyin']})\n")
-                f.write(f"   Audio File: {r['file']}\n")
                 f.write(f"   Correct Tone: {r['tone']} | Your Answer: {r['user']}\n")
                 f.write(f"   Result: {'CORRECT' if r['correct'] else 'WRONG'}\n")
-                f.write(f"   Time: {r['time']:.2f}s\n")
                 f.write("-" * 30 + "\n")
                 
         print(f"\n✅ Results saved to: {save_path}")

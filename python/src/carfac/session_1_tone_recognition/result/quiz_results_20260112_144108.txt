@@ -1,0 +1,25 @@
+MANDARIN TONE QUIZ RESULTS
+==========================
+Date: 2026-01-12 14:41:08.924220
+Score: 0/5
+
+Q1: 问题 (wèntí)
+   Correct Tone: 42 | Your Answer: w
+   Result: WRONG
+------------------------------
+Q2: 美国 (měiguó)
+   Correct Tone: 32 | Your Answer: 2
+   Result: WRONG
+------------------------------
+Q3: 学校 (xuéxiào)
+   Correct Tone: 24 | Your Answer: 3
+   Result: WRONG
+------------------------------
+Q4: 电脑 (diànnǎo)
+   Correct Tone: 43 | Your Answer: 3
+   Result: WRONG
+------------------------------
+Q5: 中国 (zhōngguó)
+   Correct Tone: 12 | Your Answer: 4
+   Result: WRONG
+------------------------------
