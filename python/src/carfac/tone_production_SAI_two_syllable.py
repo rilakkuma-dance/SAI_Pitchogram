@@ -853,20 +853,18 @@ class SAIVisualizationWithWav2Vec2:
         )
 
         # Buttons
-        self.ax_play_button = plt.axes([0.20, 0.08, 0.10, 0.05])
-        self.btn_playback = Button(self.ax_play_button, 'Play', color='lightcyan', hovercolor='cyan')
+        self.ax_play_button = plt.axes([0.15, 0.08, 0.20, 0.05])
+        self.btn_playback = Button(self.ax_play_button, 'Play Ref', color='cyan')
         self.btn_playback.on_clicked(self.toggle_playback)
 
-        self.ax_rec_button = plt.axes([0.35, 0.08, 0.12, 0.05])
-        self.btn_record = Button(self.ax_rec_button, 'Start Record', color='lightgreen', hovercolor='green')
+        # 2. Record / Stop & Save Button
+        self.ax_rec_button = plt.axes([0.40, 0.08, 0.20, 0.05])
+        self.btn_record = Button(self.ax_rec_button, 'Start Record', color='lime')
         self.btn_record.on_clicked(self.toggle_record)
 
-        self.ax_save_button = plt.axes([0.53, 0.08, 0.12, 0.05])
-        self.btn_save = Button(self.ax_save_button, 'Save Recording', color='lightblue', hovercolor='blue')
-        self.btn_save.on_clicked(self._save_recording_with_metadata)
-
-        self.ax_next_button = plt.axes([0.70, 0.08, 0.10, 0.05])
-        self.btn_next = Button(self.ax_next_button, 'Next Item', color='lightyellow', hovercolor='yellow')
+        # 3. Next Item Button
+        self.ax_next_button = plt.axes([0.65, 0.08, 0.20, 0.05])
+        self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange')
         self.btn_next.on_clicked(self.next_item)
 
         self.fig.patch.set_facecolor('#1a1a2e')
@@ -875,26 +873,36 @@ class SAIVisualizationWithWav2Vec2:
 
     def toggle_record(self, event=None):
         if self.wav2vec2_handler.is_processing:
-            print("⚠️ Cannot start recording: Wav2Vec2 is currently processing.")
+            print("⚠️ Processing... please wait.")
             return
 
         if not self.is_recording_simple:
+            # START RECORDING
             self.is_recording_simple = True
-            self.btn_record.label.set_text('Recording...')
-            self.btn_record.ax.set_facecolor('red')
+            self.btn_record.label.set_text('Stop & Save')
+            self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
             self.recorder.start_recording()
             self.clear_phoneme_feedback()
+            
             if hasattr(self, 'status_text'):
-                self.status_text.set_text('● Recording in progress...')
+                self.status_text.set_text('● Recording... Speak now!')
                 self.status_text.set_color('red')
-                self.fig.canvas.draw_idle()
+            self.fig.canvas.draw_idle()
         else:
+            # STOP AND AUTOMATICALLY SAVE
             self.is_recording_simple = False
             self.btn_record.label.set_text('Start Record')
             self.btn_record.ax.set_facecolor('lightgreen')
-            self.recorder.stop_recording()
+            
+            # This triggers the callback that handles grading/processing
+            recorded_audio = self.recorder.stop_recording() 
+            
+            # Automatically trigger save with metadata
+            if recorded_audio is not None:
+                self._save_recording_with_metadata(recorded_audio)
+                
             if hasattr(self, 'status_text'):
-                self.status_text.set_text('Processing pronunciation...')
+                self.status_text.set_text('Processing & Saved!')
                 self.status_text.set_color('orange')
             self.fig.canvas.draw_idle()
 

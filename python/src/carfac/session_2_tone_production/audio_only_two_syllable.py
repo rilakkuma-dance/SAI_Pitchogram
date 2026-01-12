@@ -515,12 +515,28 @@ class SimpleAudioVisualizerWithSAI:
         print("Stopped")
 
 if __name__ == "__main__":
-    # Auto-detect the reference directory relative to the script location
-    script_dir = Path(__file__).parent  # Directory where this script is located
-    audio_ref_dir = script_dir / "mandarin_audio_two_syllable"  # reference folder in same directory as script
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent.resolve()
+    target_folder = "mandarin_audio_two_syllable"
     
+    # Logic to find the folder: search current and parent directories
+    audio_ref_dir = None
+    search_path = script_dir
+    
+    # Search up to 3 levels up for the audio folder
+    for _ in range(4):
+        potential_path = search_path / target_folder
+        if potential_path.exists() and potential_path.is_dir():
+            audio_ref_dir = potential_path
+            break
+        search_path = search_path.parent
+
+    # Fallback to current dir if not found (will show error in PracticeSet)
+    if not audio_ref_dir:
+        audio_ref_dir = script_dir / target_folder
+
     print(f"Script location: {script_dir}")
-    print(f"Looking for WAV files in: {audio_ref_dir}")
+    print(f"Targeting audio directory: {audio_ref_dir}")
     
     visualizer = SimpleAudioVisualizerWithSAI(
         chunk_size=512,
