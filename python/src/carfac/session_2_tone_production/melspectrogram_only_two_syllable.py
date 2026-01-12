@@ -203,29 +203,58 @@ class SimpleAudioVisualizerWithSAI:
     def play_reference_audio(self, event=None):
         item = self.practice_set.get_current_item()
         path = self.practice_set.audio_base_path / item['audio']
-        if not path.exists(): return
-
-        full_spec = self.processor.get_full_spectrogram(path)
-        self.im_right.set_data(full_spec)
-        self.im_right.set_extent([0, full_spec.shape[1], 50, 4000])
-        self.ax_right.set_title(f"Reference: {item['chinese']}", color='cyan')
         
+        if not path.exists():
+            self.status_text.set_text(f"File not found: {item['audio']}")
+            self.fig.canvas.draw_idle()
+            return
+
+        # 1. Process and show the Mel-spectrogram on the right
+        try:
+            full_spec = self.processor.get_full_spectrogram(path)
+            self.im_right.set_data(full_spec)
+            
+            # Adjust the extent [left, right, bottom, top] to match the spectrogram width
+            # and the frequency range (50Hz to 4000Hz)
+            self.im_right.set_extent([0, full_spec.shape[1], 50, 4000])
+            
+            # Auto-scale color limits based on the file's intensity
+            self.im_right.set_clim(vmin=np.min(full_spec), vmax=np.max(full_spec))
+            
+            self.ax_right.set_title(f"Reference: {item['chinese']} ({item['pinyin']})", color='cyan')
+        except Exception as e:
+            print(f"Error processing spectrogram: {e}")
+
+        # 2. Play the audio in a background thread
         if not self.reference_audio_playing:
             threading.Thread(target=self._play_wav, args=(path,), daemon=True).start()
+        
+        # Refresh the canvas
         self.fig.canvas.draw_idle()
 
     def _play_wav(self, path):
         self.reference_audio_playing = True
+        self.status_text.set_text(f"🔊 Playing: {path.name}")
+        self.status_text.set_color('cyan')
         try:
             with wave.open(str(path), 'rb') as wf:
-                stream = self.p.open(format=self.p.get_format_from_width(wf.getsampwidth()),
-                                   channels=wf.getnchannels(), rate=wf.getframerate(), output=True)
+                # Use format/channels/rate from the WAV file for perfect playback
+                stream = self.p.open(
+                    format=self.p.get_format_from_width(wf.getsampwidth()),
+                    channels=wf.getnchannels(),
+                    rate=wf.getframerate(),
+                    output=True
+                )
                 data = wf.readframes(self.chunk_size)
                 while data and self.running:
-                    stream.write(data); data = wf.readframes(self.chunk_size)
+                    stream.write(data)
+                    data = wf.readframes(self.chunk_size)
                 stream.close()
         finally:
             self.reference_audio_playing = False
+            self.status_text.set_text("Ready")
+            self.status_text.set_color('yellow')
+            self.fig.canvas.draw_idle()
 
     def next_practice_item(self, event=None):
         item = self.practice_set.next_item()
@@ -267,5 +296,10 @@ class SimpleAudioVisualizerWithSAI:
         plt.show()
 
 if __name__ == "__main__":
+    # Update this to your absolute path for stability
+    audio_path = r"C:\Users\maruk\carfac-SAI\python\src\carfac\mandarin_audio_two_syllable"
+    
+    # Initialize the app with the specific path
     app = SimpleAudioVisualizerWithSAI()
+    app.practice_set = PracticeSet(audio_base_path=audio_path)
     app.start()

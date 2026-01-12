@@ -332,7 +332,7 @@ class SAIProcessor:
 
 class SAIVisualizationWithWav2Vec2:
     def __init__(self, audio_file_path=None, chunk_size=512, sample_rate=16000, sai_width=400,
-                 debug=True, playback_speed=1.0, loop_audio=True):
+                 debug=True, playback_speed=1.0, loop_audio=False):
 
         self.chunk_size = chunk_size
         self.sample_rate = sample_rate
@@ -599,31 +599,39 @@ class SAIVisualizationWithWav2Vec2:
             if self.audio_data is not None:
                 start_pos = int(self.playback_position)
                 speed_factor = self.playback_speed
+                
+                # Calculate indices for this chunk
                 chunk_indices = np.arange(frames) * speed_factor
                 chunk_indices = chunk_indices.astype(int) + start_pos
                 
-                if self.loop_audio and np.any(chunk_indices >= self.total_samples):
-                    chunk_indices = chunk_indices % self.total_samples
+                # Check if we have reached or exceeded the end of the audio
+                if np.any(chunk_indices >= self.total_samples):
+                    # Filter indices to only those within range
+                    valid_mask = chunk_indices < self.total_samples
+                    chunk = np.zeros(frames, dtype=np.float32)
                     
-                chunk_indices = np.clip(chunk_indices, 0, self.total_samples - 1)
-                chunk = self.audio_data[chunk_indices]
-
-                outdata[:len(chunk), 0] = chunk
-                outdata[len(chunk):, 0].fill(0)
-                
-                self.playback_position += int(frames * speed_factor)
-                if self.playback_position >= self.total_samples and self.total_samples > 0:
-                    if self.loop_audio:
-                        self.playback_position = self.playback_position % self.total_samples
-                    else:
-                        outdata.fill(0)
-                        raise sd.CallbackStop
+                    # Fill only the valid part
+                    valid_indices = chunk_indices[valid_mask]
+                    if len(valid_indices) > 0:
+                        chunk[:len(valid_indices)] = self.audio_data[valid_indices]
+                    
+                    outdata[:len(chunk), 0] = chunk
+                    
+                    # Since we reached the end and loop_audio is False, stop the stream
+                    raise sd.CallbackStop
+                else:
+                    chunk = self.audio_data[chunk_indices]
+                    outdata[:len(chunk), 0] = chunk
+                    self.playback_position += int(frames * speed_factor)
             else:
                 outdata.fill(0)
+                raise sd.CallbackStop
         except sd.CallbackStop:
-            raise
-        except Exception:
+            raise sd.CallbackStop
+        except Exception as e:
+            print(f"Playback error: {e}")
             outdata.fill(0)
+            raise sd.CallbackStop
 
     def get_next_file_chunk(self):
         if self.audio_data is None or self.total_samples == 0:
@@ -915,9 +923,10 @@ class SAIVisualizationWithWav2Vec2:
         self.fig.canvas.draw_idle()
 
     def toggle_playback(self, event=None):
+        # If already playing, stop it
         if self.audio_output_stream and self.audio_output_stream.active:
             self.audio_output_stream.stop()
-            self.btn_playback.label.set_text('Play')
+            self.btn_playback.label.set_text('Play Reference')
         else:
             current_item = self.practice_session.get_current_item()
             if current_item:
@@ -926,10 +935,13 @@ class SAIVisualizationWithWav2Vec2:
                     audio_data, original_sr = librosa.load(audio_path, sr=None)
                     if original_sr != self.sample_rate:
                         audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
+                    
+                    # IMPORTANT: Reset position to start from beginning
+                    self.playback_position = 0.0 
+                    
                     self._play_audio_file(audio_data, self.sample_rate)
+                    # Change label to "Stop" while playing
                     self.btn_playback.label.set_text('Stop Ref')
-                else:
-                    print(f"⚠️ Cannot play audio: File not found at {audio_path}")
 
 # ---------------- Main Execution ----------------
 
