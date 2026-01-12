@@ -237,7 +237,7 @@ class ToneIntroductionQuizWithSAI:
 
         # 7. Big Play Button (Bottom)
         self.ax_btn = plt.axes([0.3, 0.12, 0.4, 0.08])
-        self.btn_action = Button(self.ax_btn, 'Play Loop', color='#5B5FED', hovercolor='#4B4FDD')
+        self.btn_action = Button(self.ax_btn, 'Play Loop', color='#3498db', hovercolor='#3498db')
         self.btn_action.label.set_color('white')
         self.btn_action.label.set_weight('bold')
         self.btn_action.label.set_fontsize(14)
