@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-12 11:14:49.840635
+Score: 4/5
+
+Q1: 白 (bái)
+  Audio File: 06_白_2.wav
+  Correct Tone: 2 | Your Answer: 3
+  Result: WRONG
+  Time: 12.09s
+------------------------------
+Q2: 去 (qù)
+  Audio File: 12_去_4.wav
+  Correct Tone: 4 | Your Answer: 4
+  Result: CORRECT
+  Time: 3.45s
+------------------------------
+Q3: 天 (tiān)
+  Audio File: 01_天_1.wav
+  Correct Tone: 1 | Your Answer: 1
+  Result: CORRECT
+  Time: 13.07s
+------------------------------
+Q4: 狗 (gǒu)
+  Audio File: 09_狗_3.wav
+  Correct Tone: 3 | Your Answer: 3
+  Result: CORRECT
+  Time: 2.97s
+------------------------------
+Q5: 心 (xīn)
+  Audio File: 02_心_1.wav
+  Correct Tone: 1 | Your Answer: 1
+  Result: CORRECT
+  Time: 2.36s
+------------------------------
