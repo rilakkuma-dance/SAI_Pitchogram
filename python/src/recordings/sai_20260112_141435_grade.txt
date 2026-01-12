@@ -1,0 +1,2 @@
+Chinese,Pinyin,English,Reference Tone,Detected Tone,Confidence,Is Correct
+学,xué,,2,3,0.99,False

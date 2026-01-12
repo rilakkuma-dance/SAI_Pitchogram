@@ -452,10 +452,9 @@ class SAIVisualizationWithWav2Vec2:
             return f"SENTENCE: {item['chinese']}"
 
     def _load_practice_item(self, item):
-        if not item: return
+        if not item or not self.practice_session: return
         
-        print(f"\n🎧 Loading item ({self.practice_session.get_progress_string()}): {self._get_item_display(item)}")
-        
+        # 1. Update internal phoneme/audio data
         reference_pronunciation = item.get('pinyin', item.get('chinese'))
         translation = item.get('english', '')
         target_phonemes = item.get('phonemes', 'placeholder')
@@ -464,42 +463,33 @@ class SAIVisualizationWithWav2Vec2:
         self.wav2vec2_handler.target_phonemes = target_phonemes
         self.clear_phoneme_feedback()
 
-        audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
+        # 2. Update the UI Text (Centered, White, Bold)
+        # Format: 中国 (zhōngguó) - 1/10
+        progress_str = self.practice_session.get_progress_string()
+        display_text = f"{item['chinese']} ({item['pinyin']}) - {progress_str}"
         
+        if hasattr(self, 'practice_text'):
+            self.practice_text.set_text(display_text)
+
+        # 3. Handle Audio Loading
+        audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
         if audio_path and os.path.exists(audio_path):
-            print(f"Loading reference audio: {audio_path}")
             audio_data, original_sr = librosa.load(audio_path, sr=None)
-            
             if original_sr != self.sample_rate:
                 audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
-            
             self.audio_data = audio_data
             self.total_samples = len(self.audio_data)
-            self.duration = self.total_samples / self.sample_rate
             self.current_position = 0
-            self.playback_position = 0.0
             
-            if self.audio_output_stream and self.audio_output_stream.active:
-                self._play_audio_file(audio_data, self.sample_rate)
-
+            # Clear reference view until played
             self.vis_file.img[:] = 0
             self.im_file.set_data(self.vis_file.img)
-            self.fig.canvas.draw_idle()
-        else:
-            print(f"⚠️ Reference audio file not found: {audio_path}")
-            self.audio_data = None
-            self.total_samples = 0
-
-        if hasattr(self, 'practice_text'):
-            item_text = f"[{item['type'].upper()}] {item['chinese']}\n{item['pinyin']}\n{item.get('english', '')}"
-            self.practice_text.set_text(item_text)
-
-        if hasattr(self, 'progress_text'):
-            self.progress_text.set_text(self.practice_session.get_progress_string())
         
         if hasattr(self, 'status_text'):
             self.status_text.set_text('Ready')
-            self.status_text.set_color('lime')
+            self.status_text.set_color('yellow')
+            
+        self.fig.canvas.draw_idle()
 
     def clear_phoneme_feedback(self, event=None):
         self.vis_realtime.img[:] = 0
@@ -798,8 +788,9 @@ class SAIVisualizationWithWav2Vec2:
         print("SAIVisualizationWithWav2Vec2 stopped.")
 
     def _setup_dual_visualization(self):
-        self.fig = plt.figure(figsize=(16, 10))
-        gs = self.fig.add_gridspec(3, 2, height_ratios=[7, 2, 0.3], width_ratios=[1, 1])
+        self.fig = plt.figure(figsize=(14, 8))
+        # Matches the Spectrogram grid: High visual area, medium text area, small control area
+        gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1.5, 0.5])
 
         # LEFT SAI display (Your Audio - Live)
         self.ax_realtime = self.fig.add_subplot(gs[0, 0])
@@ -808,7 +799,7 @@ class SAIVisualizationWithWav2Vec2:
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='magma', vmin=0, vmax=255
         )
-        self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=13, weight='bold')
+        self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=12, weight='bold')
         self.ax_realtime.axis('off')
 
         # RIGHT SAI display (Reference Audio)
@@ -818,57 +809,54 @@ class SAIVisualizationWithWav2Vec2:
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='magma', vmin=0, vmax=255
         )
-        self.ax_file.set_title('Reference Audio', color='cyan', fontsize=13, weight='bold')
+        self.ax_file.set_title('Reference Pattern', color='cyan', fontsize=12, weight='bold')
         self.ax_file.axis('off')
 
-        # Practice item display
+        # Practice info area (Lower Middle)
         self.ax_practice = self.fig.add_subplot(gs[1, :])
         self.ax_practice.axis('off')
-        self.ax_practice.set_facecolor('#16213e')
-
-        current_item = self.practice_session.get_current_item() if self.practice_session else None
-        item_text = "Loading..."
-        if current_item:
-            item_text = f"[{current_item['type'].upper()}] {current_item['chinese']}\n{current_item['pinyin']}\n{current_item.get('english','')}"
         
+        current_item = self.practice_session.get_current_item() if self.practice_session else None
+        item_text = ""
+        if current_item:
+            progress = self.practice_session.get_progress_string()
+            item_text = f"{current_item['chinese']} ({current_item['pinyin']}) - {progress}"
+        
+        # Center-aligned bold text exactly like the spectrogram UI
         self.practice_text = self.ax_practice.text(
-            0.5, 0.5, item_text, transform=self.ax_practice.transAxes,
-            color='cyan', fontsize=18, verticalalignment='center',
-            horizontalalignment='center', weight='bold',
-            bbox=dict(boxstyle='round,pad=0.8', facecolor='black', alpha=0.9, edgecolor='cyan', linewidth=2)
+            0.5, 0.6, item_text, transform=self.ax_practice.transAxes,
+            color='white', ha='center', fontsize=16, weight='bold'
         )
 
         self.status_text = self.ax_practice.text(
-            0.02, 0.02, 'Ready - Press Play to hear reference', transform=self.ax_practice.transAxes,
-            color='lime', fontsize=11, verticalalignment='bottom',
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='black', alpha=0.8)
+            0.5, 0.2, 'Ready', transform=self.ax_practice.transAxes,
+            color='yellow', ha='center', fontsize=11
         )
 
-        progress_str = f"Set | {self.practice_session.get_progress_string()}" if self.practice_session else "Practice Mode"
-        self.progress_text = self.ax_practice.text(
-            0.98, 0.98, progress_str, transform=self.ax_practice.transAxes,
-            color='yellow', fontsize=10, verticalalignment='top',
-            horizontalalignment='right',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.8)
-        )
+        # Progress tracking (optional hidden text for logic compatibility)
+        self.progress_text = self.ax_practice.text(0, 0, "", alpha=0) 
 
-        # Buttons
-        self.ax_play_button = plt.axes([0.15, 0.08, 0.20, 0.05])
-        self.btn_playback = Button(self.ax_play_button, 'Play Ref', color='cyan')
+        # --- Buttons (Matching the Spectrogram UI positions/colors) ---
+        from matplotlib.widgets import Button
+        
+        # 1. Play Reference Button
+        self.ax_play_button = plt.axes([0.25, 0.05, 0.15, 0.04])
+        self.btn_playback = Button(self.ax_play_button, 'Play Reference', color='cyan', hovercolor='lightblue')
         self.btn_playback.on_clicked(self.toggle_playback)
 
         # 2. Record / Stop & Save Button
-        self.ax_rec_button = plt.axes([0.40, 0.08, 0.20, 0.05])
-        self.btn_record = Button(self.ax_rec_button, 'Start Record', color='lime')
+        self.ax_rec_button = plt.axes([0.42, 0.05, 0.18, 0.04])
+        self.btn_record = Button(self.ax_rec_button, 'Start Recording', color='lime', hovercolor='green')
         self.btn_record.on_clicked(self.toggle_record)
 
         # 3. Next Item Button
-        self.ax_next_button = plt.axes([0.65, 0.08, 0.20, 0.05])
-        self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange')
+        self.ax_next_button = plt.axes([0.62, 0.05, 0.15, 0.04])
+        self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange', hovercolor='yellow')
         self.btn_next.on_clicked(self.next_item)
 
-        self.fig.patch.set_facecolor('#1a1a2e')
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.96, bottom=0.06, hspace=0.15, wspace=0.15)
+        # Background color
+        self.fig.patch.set_facecolor('#121212')
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.92, bottom=0.1, hspace=0.2)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
 
     def toggle_record(self, event=None):
@@ -908,10 +896,17 @@ class SAIVisualizationWithWav2Vec2:
 
     def next_item(self, event=None):
         if self.practice_session:
-            item = self.practice_session.next_item()
-            if self.practice_session.current_index == 0:
-                print("\nCompleted practice set! Starting over...")
-            self._load_practice_item(item)
+            # Check if we are about to wrap around
+            if self.practice_session.current_index >= self.practice_session.total_items - 1:
+                self.status_text.set_text(f"✓ Practice Set Complete ({self.practice_session.total_items}/{self.practice_session.total_items})")
+                self.status_text.set_color('lime')
+                # Optional: Uncomment the next line to loop back to the start
+                # item = self.practice_session.next_item()
+                # self._load_practice_item(item)
+            else:
+                item = self.practice_session.next_item()
+                self._load_practice_item(item)
+        self.fig.canvas.draw_idle()
 
     def toggle_playback(self, event=None):
         if self.audio_output_stream and self.audio_output_stream.active:

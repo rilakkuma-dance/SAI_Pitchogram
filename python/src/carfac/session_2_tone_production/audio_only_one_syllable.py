@@ -2,18 +2,17 @@ import sys
 import numpy as np
 import pyaudio
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 import matplotlib.font_manager as fm
 import threading
+import queue
 import wave
 import os
 import random
 from datetime import datetime
 from pathlib import Path
 import time
-import subprocess
-from matplotlib.widgets import Button
 
-# Configure matplotlib to support Chinese characters
 def setup_chinese_font():
     chinese_fonts = ['SimHei', 'Microsoft YaHei', 'STHeiti', 'Heiti TC', 'Arial Unicode MS']
     available_fonts = [f.name for f in fm.fontManager.ttflist]
@@ -27,7 +26,7 @@ def setup_chinese_font():
 setup_chinese_font()
 
 class PracticeSet:
-    def __init__(self, audio_base_path):
+    def __init__(self, audio_base_path="mandarin_audio_one_syllable"):
         self.audio_base_path = Path(audio_base_path)
         self.vocab_items = [
             {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "audio": "01_天_1.wav"},
@@ -49,8 +48,7 @@ class PracticeSet:
 
     def generate_new_set(self):
         num_to_pick = min(3, len(self.all_items))
-        if num_to_pick > 0:
-            self.current_set = random.sample(self.all_items, num_to_pick)
+        self.current_set = random.sample(self.all_items, num_to_pick)
         self.current_index = 0
         return self.current_set
 
@@ -62,169 +60,143 @@ class PracticeSet:
         self.current_index += 1
         return self.get_current_item()
 
-    def get_progress(self):
-        if not self.current_set: return "0/0"
-        return f"{self.current_index + 1} of {len(self.current_set)}"
+    def get_progress_string(self):
+        return f"{self.current_index + 1}/{len(self.current_set)}"
+
+    def get_audio_path(self, item):
+        if item and 'audio' in item:
+            return self.audio_base_path / item['audio']
+        return None
 
 class SimpleAudioVisualizerWithSAI:
-    def __init__(self, chunk_size=512, sample_rate=16000, save_dir="recordings", audio_ref_dir=None):
+    def __init__(self, chunk_size=512, sample_rate=16000, save_dir="recordings", audio_ref_dir="reference"):
         self.chunk_size, self.sample_rate = chunk_size, sample_rate
         self.running = False
         self.practice_set = PracticeSet(audio_base_path=audio_ref_dir)
         self.save_dir = save_dir
         os.makedirs(save_dir, exist_ok=True)
         self.recorded_frames, self.is_recording = [], False
-        self.reference_audio_playing = False
-        self.p = pyaudio.PyAudio()
         self._setup_visualization()
 
     def _setup_visualization(self):
-        self.fig = plt.figure(figsize=(10, 7), facecolor='#1a1a2e')
-        self.ax_main = self.fig.add_subplot(111)
+        self.fig = plt.figure(figsize=(14, 8))
+        gs = self.fig.add_gridspec(3, 1, height_ratios=[6, 1.5, 0.5])
+        self.ax_main = self.fig.add_subplot(gs[0])
         self.ax_main.axis('off')
         
-        # --- ADJUSTED STATUS TEXT POSITION (Moved Y from 0.05 to 0.22) ---
-        self.status_text = self.ax_main.text(0.05, 0.22, 'Ready', transform=self.ax_main.transAxes,
-            color='lime', fontsize=12, fontweight='bold',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='black', alpha=0.8))
-        
-        # Word Display
+        self.practice_text = self.ax_main.text(0.5, 0.5, "", transform=self.ax_main.transAxes,
+            color='white', ha='center', va='center', fontsize=28, weight='bold')
+        self.status_text = self.ax_main.text(0.5, 0.1, "Ready", transform=self.ax_main.transAxes,
+            color='yellow', ha='center', fontsize=12)
+
+        from matplotlib.widgets import Button
+        self.ax_play = plt.axes([0.25, 0.05, 0.15, 0.04])
+        self.btn_play = Button(self.ax_play, 'Play Reference', color='cyan', hovercolor='lightblue')
+        self.btn_play.on_clicked(self.play_reference_audio)
+
+        self.ax_rec = plt.axes([0.42, 0.05, 0.18, 0.04])
+        self.btn_rec = Button(self.ax_rec, 'Start Recording', color='lime', hovercolor='green')
+        self.btn_rec.on_clicked(self.toggle_recording)
+
+        self.ax_next = plt.axes([0.62, 0.05, 0.15, 0.04])
+        self.btn_next = Button(self.ax_next, 'Next Item', color='orange', hovercolor='yellow')
+        self.btn_next.on_clicked(self.next_practice_item)
+
+        self.fig.patch.set_facecolor('#121212')
+        plt.subplots_adjust(bottom=0.15)
+
+    def toggle_recording(self, event=None):
+        if not self.is_recording:
+            self.recorded_frames, self.is_recording = [], True
+            self.btn_rec.label.set_text('Stop & Save')
+            self.btn_rec.ax.set_facecolor('#ff4444')
+            self.status_text.set_text('● RECORDING...')
+            self.status_text.set_color('red')
+        else:
+            self.is_recording = False
+            self.btn_rec.label.set_text('Start Recording')
+            self.btn_rec.ax.set_facecolor('lime')
+            self.save_recording()
+        self.fig.canvas.draw_idle()
+
+    def save_recording(self):
+        if not self.recorded_frames: return
         item = self.practice_set.get_current_item()
-        txt = f"[Tone {item['tone']}] {item['chinese']}\n{item['pinyin']}" if item else "Folder Empty"
-        self.practice_text = self.ax_main.text(0.5, 0.55, txt, transform=self.ax_main.transAxes,
-            color='cyan', fontsize=40, ha='center', va='center', weight='bold',
-            bbox=dict(boxstyle='round,pad=1', facecolor='black', alpha=0.9, edgecolor='cyan', lw=3))
-        
-        # Progress
-        self.progress_text = self.ax_main.text(0.95, 0.92, self.practice_set.get_progress(), 
-            transform=self.ax_main.transAxes, color='yellow', ha='right',
-            bbox=dict(boxstyle='round', facecolor='black', alpha=0.8))
+        ts = datetime.now().strftime("%H%M%S")
+        filename = f"rec_{item['chinese']}_{ts}.wav"
+        path = os.path.join(self.save_dir, filename)
+        with wave.open(path, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
+            wf.setframerate(self.sample_rate)
+            wf.writeframes(b''.join(self.recorded_frames))
+        self.status_text.set_text(f'✓ Saved: {filename}')
+        self.status_text.set_color('lime')
+        self.recorded_frames = []
 
-        # --- ADJUSTED BUTTONS ---
-        # [left, bottom, width, height]
-        self.ax_play = plt.axes([0.15, 0.08, 0.20, 0.07])
-        self.play_btn = Button(self.ax_play, 'Play Reference', color='cyan')
-        self.play_btn.label.set_color('black')
-        self.play_btn.on_clicked(self.play_reference_audio)
-        
-        self.ax_rec = plt.axes([0.40, 0.08, 0.20, 0.07])
-        self.rec_btn = Button(self.ax_rec, 'Record', color='lime')
-        self.rec_btn.label.set_color('black')
-        self.rec_btn.on_clicked(self.toggle_recording_and_save)
-        
-        self.ax_next = plt.axes([0.65, 0.08, 0.20, 0.07])
-        self.next_btn = Button(self.ax_next, 'Next Item', color='orange')
-        self.next_btn.label.set_color('black')
-        self.next_btn.on_clicked(self.next_practice_item)
+    def play_reference_audio(self, event=None):
+        item = self.practice_set.get_current_item()
+        path = self.practice_set.get_audio_path(item)
+        if path and path.exists():
+            threading.Thread(target=self._play_wav, args=(path,), daemon=True).start()
 
-        # Ensure layout has enough space at the bottom
-        plt.subplots_adjust(bottom=0.25)
+    def _play_wav(self, path):
+        self.status_text.set_text('Playing reference...')
+        self.status_text.set_color('cyan')
+        with wave.open(str(path), 'rb') as wf:
+            stream = self.p.open(format=self.p.get_format_from_width(wf.getsampwidth()),
+                               channels=wf.getnchannels(), rate=wf.getframerate(), output=True)
+            data = wf.readframes(1024)
+            while data and self.running:
+                stream.write(data); data = wf.readframes(1024)
+            stream.close()
+        self.status_text.set_text('Ready'); self.status_text.set_color('yellow')
+        self.fig.canvas.draw_idle()
+
+    def next_practice_item(self, event=None):
+        item = self.practice_set.next_item()
+        if item:
+            self._update_display(item)
+            threading.Timer(0.3, self.play_reference_audio).start()
+        else:
+            self.practice_text.set_text("Set Complete!")
+            self.status_text.set_text("✓ All items finished")
+            self.status_text.set_color('lime')
+        self.fig.canvas.draw_idle()
+
+    def _update_display(self, item):
+        if item:
+            txt = f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.get_progress_string()}"
+            self.practice_text.set_text(txt)
+        else:
+            self.practice_text.set_text("No Audio Files Found")
 
     def audio_callback(self, in_data, frame_count, time_info, status):
         if self.is_recording: self.recorded_frames.append(in_data)
         return (in_data, pyaudio.paContinue)
 
-    def toggle_recording_and_save(self, event):
-        if not self.is_recording:
-            self.recorded_frames = []
-            self.is_recording = True
-            self.rec_btn.label.set_text('Stop & Save')
-            self.status_text.set_text('Recording...')
-            self.status_text.set_color('yellow')
-            self.practice_text.set_color('yellow') 
-            self.practice_text.get_bbox_patch().set_edgecolor('yellow')
-        else:
-            self.is_recording = False
-            self.rec_btn.label.set_text('Record')
-            self.practice_text.set_color('cyan')
-            self.practice_text.get_bbox_patch().set_edgecolor('cyan')
-            if self.recorded_frames: self.save_recording()
-        self.fig.canvas.draw_idle()
-
-    def save_recording(self):
-        item = self.practice_set.get_current_item()
-        ts = datetime.now().strftime("%H%M%S")
-        fn = f"audio_{item['chinese']}_{ts}.wav"
-        fp = os.path.join(self.save_dir, fn)
-        try:
-            with wave.open(fp, 'wb') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(self.p.get_sample_size(pyaudio.paInt16))
-                wf.setframerate(self.sample_rate)
-                wf.writeframes(b''.join(self.recorded_frames))
-            self.status_text.set_text(f'Saved: {fn}')
-            self.status_text.set_color('lime')
-        except:
-            self.status_text.set_text('Error Saving')
-            self.status_text.set_color('red')
-        self.fig.canvas.draw_idle()
-
-    def play_reference_audio(self, event):
-        if self.reference_audio_playing: return
-        item = self.practice_set.get_current_item()
-        if not item: return
-        path = self.practice_set.audio_base_path / item['audio']
-        if path.exists():
-            threading.Thread(target=self._play_wav, args=(path,), daemon=True).start()
-
-    def _play_wav(self, path):
-        self.reference_audio_playing = True
-        self.status_text.set_text('Playing Reference...')
-        self.status_text.set_color('cyan')
-        self.fig.canvas.draw_idle()
-        try:
-            with wave.open(str(path), 'rb') as wf:
-                stream = self.p.open(format=self.p.get_format_from_width(wf.getsampwidth()),
-                                   channels=wf.getnchannels(), rate=wf.getframerate(), output=True)
-                data = wf.readframes(1024)
-                while data and self.running:
-                    stream.write(data)
-                    data = wf.readframes(1024)
-                stream.close()
-        finally:
-            self.reference_audio_playing = False
-            self.status_text.set_text('Ready')
-            self.status_text.set_color('lime')
-            self.fig.canvas.draw_idle()
-
-    def next_practice_item(self, event):
-        item = self.practice_set.next_item()
-        if item:
-            self.practice_text.set_text(f"[Tone {item['tone']}] {item['chinese']}\n{item['pinyin']}")
-            self.progress_text.set_text(self.practice_set.get_progress())
-            self.status_text.set_text('Ready')
-            self.status_text.set_color('lime')
-        else:
-            self.status_text.set_text('Session Complete!')
-            self.status_text.set_color('magenta')
-            threading.Timer(1.5, self._exit_and_launch).start()
-        self.fig.canvas.draw_idle()
-
-    def _exit_and_launch(self):
-        self.stop()
-        plt.close('all')
-        os._exit(0)
-
     def start(self):
-        self.running = True
+        self.p = pyaudio.PyAudio()
         self.stream = self.p.open(format=pyaudio.paInt16, channels=1, rate=self.sample_rate,
-                                 input=True, stream_callback=self.audio_callback)
+            input=True, frames_per_buffer=self.chunk_size, stream_callback=self.audio_callback)
+        self.running = True
+        self._update_display(self.practice_set.get_current_item())
+        # cache_frame_data=False fixed the warning
+        self.animation = animation.FuncAnimation(self.fig, lambda i: [self.practice_text, self.status_text], 
+                                                 interval=100, cache_frame_data=False)
         plt.show()
 
     def stop(self):
         self.running = False
-        if hasattr(self, 'stream'): 
-            self.stream.stop_stream()
-            self.stream.close()
-        self.p.terminate()
+        if hasattr(self, 'stream') and self.stream: self.stream.stop_stream(); self.stream.close()
+        if hasattr(self, 'p') and self.p: self.p.terminate()
 
 if __name__ == "__main__":
-    # Your specified path
-    user_path = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\mandarin_audio_one_syllable")
-    audio_ref_dir = str(user_path) if user_path.exists() else "mandarin_audio_one_syllable"
-
-    app = SimpleAudioVisualizerWithSAI(audio_ref_dir=audio_ref_dir)
-    try:
-        app.start()
-    except KeyboardInterrupt:
-        app.stop()
+    script_dir = Path(__file__).parent.resolve()
+    audio_dir = script_dir / "mandarin_audio_one_syllable"
+    if not audio_dir.exists():
+        audio_dir = script_dir.parent / "mandarin_audio_one_syllable"
+    
+    visualizer = SimpleAudioVisualizerWithSAI(audio_ref_dir=str(audio_dir))
+    try: visualizer.start()
+    finally: visualizer.stop()
