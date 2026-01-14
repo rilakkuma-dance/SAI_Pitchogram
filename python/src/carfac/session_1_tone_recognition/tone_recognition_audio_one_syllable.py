@@ -14,11 +14,26 @@ import subprocess
 import numpy as np
 
 # Try to import pypinyin
+# --- AUTO-INSTALLER ---
 try:
     from pypinyin import pinyin, Style
     HAS_PYPINYIN = True
 except ImportError:
-    HAS_PYPINYIN = False
+    print("⚠️ pypinyin not found. Installing it automatically...")
+    import subprocess
+    import sys
+    # Install specifically for the running python version
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pypinyin"])
+    
+    # Try importing again
+    try:
+        from pypinyin import pinyin, Style
+        HAS_PYPINYIN = True
+        print("✅ Installation successful!")
+    except ImportError:
+        HAS_PYPINYIN = False
+        print("❌ Automatic installation failed. Pinyin will be disabled.")
+# ----------------------
 
 class ToneIntroductionQuiz:
     def __init__(self):
@@ -269,16 +284,25 @@ class ToneIntroductionQuiz:
         print(f"✅ Report generated: {save_path}")
 
     def _launch_next_script(self):
-        # Adjusted path logic to be slightly more robust to different environments
-        next_script = Path(r"C:\Users\maruk\carfac-SAI\python\src\carfac\session_1_tone_recognition\tone_recognition_audio_two_syllable.py")
+        # Defines the target filename
+        target_file = "tone_recognition_audio_two_syllable.py"
+        current_dir = Path(__file__).parent
+        
+        # 1. Look in the SAME folder
+        next_script = current_dir / target_file
+        
+        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
+        # (This matches the structure implied by your old path)
         if not next_script.exists():
-             # Fallback: try looking in the same folder
-             next_script = Path(__file__).parent / "tone_recognition_audio_two_syllable.py"
+            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
 
+        # 3. Launch if found
         if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
             subprocess.Popen([sys.executable, str(next_script)])
         else:
-            print(f"⚠️ Could not find next script at: {next_script}")
+            print(f"⚠️ Could not find next script: {target_file}")
+            print(f"   Checked in: {current_dir}")
 
     def show(self):
         plt.show()

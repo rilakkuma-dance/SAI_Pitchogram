@@ -1,2 +1,0 @@
-Chinese,Pinyin,English,Reference Tone,Detected Tone,Confidence,Is Correct
-骂,mà,,4,3,1.00,False

@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 import librosa 
 import tkinter as tk
+import subprocess
 
 # Try to import pydub for MP3 support
 try:
@@ -212,20 +213,28 @@ class SimpleAudioVisualizerWithSAI:
             return
 
         # 1. Process and show the Mel-spectrogram on the right
+        # 1. Process and show the Mel-spectrogram on the right
         try:
+            print(f"Generating spectrogram for: {path.name}...")
             full_spec = self.processor.get_full_spectrogram(path)
+            
+            # Update Data
             self.im_right.set_data(full_spec)
             
-            # Adjust the extent [left, right, bottom, top] to match the spectrogram width
-            # and the frequency range (50Hz to 4000Hz)
+            # Update Extent (Stretch image to fit the box)
+            # [left, right, bottom, top]
             self.im_right.set_extent([0, full_spec.shape[1], 50, 4000])
             
-            # Auto-scale color limits based on the file's intensity
+            # Update Colors (Normalize contrast)
             self.im_right.set_clim(vmin=np.min(full_spec), vmax=np.max(full_spec))
             
             self.ax_right.set_title(f"Reference: {item['chinese']} ({item['pinyin']})", color='cyan')
+            print("Spectrogram updated successfully.")
+            
         except Exception as e:
-            print(f"Error processing spectrogram: {e}")
+            print(f"❌ SPECTROGRAM ERROR: {e}")
+            import traceback
+            traceback.print_exc()
 
         # 2. Play the audio in a background thread
         if not self.reference_audio_playing:
@@ -264,9 +273,15 @@ class SimpleAudioVisualizerWithSAI:
             self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.current_index + 1}/3")
             self.play_reference_audio()
         else:
-            self.status_text.set_text("✓ Practice Set Complete (3/3)")
+            # --- SET COMPLETE LOGIC ---
+            self.status_text.set_text("✓ Set Complete! Loading next...")
             self.status_text.set_color('lime')
             self.btn_next.set_active(False)
+            self.fig.canvas.draw_idle()
+            
+            # Close current window and launch next script
+            plt.close(self.fig) 
+            self._launch_next_script()
 
     def update_vis(self, frame):
         self.im_left.set_data(self.vis.img)
@@ -297,11 +312,55 @@ class SimpleAudioVisualizerWithSAI:
         self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True)
         plt.show()
 
+    def _launch_next_script(self):
+        # Defines the target filename
+        target_file = "melspectrogram_only_two_syllable.py"
+        current_dir = Path(__file__).parent
+        
+        # 1. Look in the SAME folder
+        next_script = current_dir / target_file
+        
+        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
+        # (This matches the structure implied by your old path)
+        if not next_script.exists():
+            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
+
+        # 3. Launch if found
+        if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
+            subprocess.Popen([sys.executable, str(next_script)])
+        else:
+            print(f"⚠️ Could not find next script: {target_file}")
+            print(f"   Checked in: {current_dir}")
+
 if __name__ == "__main__":
-    # Update this to your absolute path for stability
-    audio_path = r"C:\Users\maruk\carfac-SAI\python\src\carfac\mandarin_audio_one_syllable"
+    # 1. Determine the folder where THIS script is located
+    script_dir = Path(__file__).parent.resolve()
     
-    # Initialize the app with the specific path
+    # 2. Look for the audio folder in common locations
+    possible_paths = [
+        script_dir / "mandarin_audio_one_syllable",           # Same folder
+        script_dir / "carfac" / "mandarin_audio_one_syllable", # Subfolder
+        script_dir.parent / "mandarin_audio_one_syllable"      # One folder up
+    ]
+    
+    audio_path = None
+    for p in possible_paths:
+        if p.exists():
+            audio_path = p
+            print(f"✅ Found audio folder at: {audio_path}")
+            break
+            
+    if audio_path is None:
+        print("❌ ERROR: Could not find 'mandarin_audio_one_syllable' folder.")
+        print(f"   Checked locations: {[str(p) for p in possible_paths]}")
+        # Fallback to current dir to prevent crash, though audio won't play
+        audio_path = script_dir 
+
+    # 3. Initialize App
     app = SimpleAudioVisualizerWithSAI()
     app.practice_set = PracticeSet(audio_base_path=audio_path)
-    app.start()
+    try:
+        app.start()
+    finally:
+        app.stop()

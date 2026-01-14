@@ -11,6 +11,7 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog
 import sys
+import subprocess
 
 # Configure matplotlib for Chinese characters
 try:
@@ -216,6 +217,7 @@ class ToneSpectrogramQuiz:
             self._save_results()
             plt.close(self.fig)
             print("Quiz Complete! Results saved to file.")
+            self._launch_next_script()
         else:
             self._select_random_item()
 
@@ -246,6 +248,27 @@ class ToneSpectrogramQuiz:
             f.write("\n".join(lines))
         
         print(f"\nReport generated: {filename}")
+
+    def _launch_next_script(self):
+        # Defines the target filename
+        target_file = "tone_recognition_melspectrogram_two_syllable.py"
+        current_dir = Path(__file__).parent
+        
+        # 1. Look in the SAME folder
+        next_script = current_dir / target_file
+        
+        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
+        # (This matches the structure implied by your old path)
+        if not next_script.exists():
+            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
+
+        # 3. Launch if found
+        if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
+            subprocess.Popen([sys.executable, str(next_script)])
+        else:
+            print(f"⚠️ Could not find next script: {target_file}")
+            print(f"   Checked in: {current_dir}")
 
     def show(self):
         plt.show()

@@ -1,2 +1,0 @@
-Chinese,Pinyin,English,Reference Tone,Detected Tone,Confidence,Is Correct
-商店,shāngdiàn,,14,4,0.76,False

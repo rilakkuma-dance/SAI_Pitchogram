@@ -210,20 +210,28 @@ class SimpleAudioVisualizerWithSAI:
             return
 
         # 1. Process and show the Mel-spectrogram on the right
+        # 1. Process and show the Mel-spectrogram on the right
         try:
+            print(f"Generating spectrogram for: {path.name}...")
             full_spec = self.processor.get_full_spectrogram(path)
+            
+            # Update Data
             self.im_right.set_data(full_spec)
             
-            # Adjust the extent [left, right, bottom, top] to match the spectrogram width
-            # and the frequency range (50Hz to 4000Hz)
+            # Update Extent (Stretch image to fit the box)
+            # [left, right, bottom, top]
             self.im_right.set_extent([0, full_spec.shape[1], 50, 4000])
             
-            # Auto-scale color limits based on the file's intensity
+            # Update Colors (Normalize contrast)
             self.im_right.set_clim(vmin=np.min(full_spec), vmax=np.max(full_spec))
             
             self.ax_right.set_title(f"Reference: {item['chinese']} ({item['pinyin']})", color='cyan')
+            print("Spectrogram updated successfully.")
+            
         except Exception as e:
-            print(f"Error processing spectrogram: {e}")
+            print(f"❌ SPECTROGRAM ERROR: {e}")
+            import traceback
+            traceback.print_exc()
 
         # 2. Play the audio in a background thread
         if not self.reference_audio_playing:
@@ -285,21 +293,61 @@ class SimpleAudioVisualizerWithSAI:
             self.vis.img[:, 0] = col
 
     def start(self):
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=pyaudio.paInt16, channels=1, rate=self.sample_rate,
-                                input=True, stream_callback=self.audio_callback)
+        try:
+            self.p = pyaudio.PyAudio()
+            # Try to open audio stream (Mic input)
+            self.stream = self.p.open(
+                format=pyaudio.paInt16, 
+                channels=1, 
+                rate=self.sample_rate,
+                input=True, 
+                stream_callback=self.audio_callback
+            )
+        except Exception as e:
+            print(f"⚠️ Audio Input Failed: {e}")
+            print("   -> App will run in VISUAL-ONLY mode (Dummy Recording enabled)")
+            # We don't set self.stream here, so the app continues without crashing
+        
         self.running = True
+        
+        # Start processing loop (Visuals)
         threading.Thread(target=self.process_loop, daemon=True).start()
+        
+        # Update text info
         item = self.practice_set.get_current_item()
         self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - 1/3")
-        self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True)
+        
+        self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True, cache_frame_data=False)
         plt.show()
 
 if __name__ == "__main__":
-    # Update this to your absolute path for stability
-    audio_path = r"C:\Users\maruk\carfac-SAI\python\src\carfac\mandarin_audio_two_syllable"
+    # 1. Determine the folder where THIS script is located
+    script_dir = Path(__file__).parent.resolve()
     
-    # Initialize the app with the specific path
+    # 2. Look for the audio folder in common locations
+    possible_paths = [
+        script_dir / "mandarin_audio_two_syllable",           # Same folder
+        script_dir / "carfac" / "mandarin_audio_two_syllable", # Subfolder
+        script_dir.parent / "mandarin_audio_two_syllable"      # One folder up
+    ]
+    
+    audio_path = None
+    for p in possible_paths:
+        if p.exists():
+            audio_path = p
+            print(f"✅ Found audio folder at: {audio_path}")
+            break
+            
+    if audio_path is None:
+        print("❌ ERROR: Could not find 'mandarin_audio_two_syllable' folder.")
+        print(f"   Checked locations: {[str(p) for p in possible_paths]}")
+        # Fallback to current dir to prevent crash, though audio won't play
+        audio_path = script_dir 
+
+    # 3. Initialize App
     app = SimpleAudioVisualizerWithSAI()
     app.practice_set = PracticeSet(audio_base_path=audio_path)
-    app.start()
+    try:
+        app.start()
+    finally:
+        app.stop()

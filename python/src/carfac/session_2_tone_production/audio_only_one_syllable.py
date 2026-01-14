@@ -12,6 +12,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 import time
+import subprocess
 
 def setup_chinese_font():
     chinese_fonts = ['SimHei', 'Microsoft YaHei', 'STHeiti', 'Heiti TC', 'Arial Unicode MS']
@@ -162,6 +163,8 @@ class SimpleAudioVisualizerWithSAI:
             self.practice_text.set_text("Set Complete!")
             self.status_text.set_text("✓ All items finished")
             self.status_text.set_color('lime')
+            plt.close(self.fig)
+            self._launch_next_script()
         self.fig.canvas.draw_idle()
 
     def _update_display(self, item):
@@ -190,6 +193,27 @@ class SimpleAudioVisualizerWithSAI:
         self.running = False
         if hasattr(self, 'stream') and self.stream: self.stream.stop_stream(); self.stream.close()
         if hasattr(self, 'p') and self.p: self.p.terminate()
+
+    def _launch_next_script(self):
+        # Defines the target filename
+        target_file = "audio_only_two_syllable.py"
+        current_dir = Path(__file__).parent
+        
+        # 1. Look in the SAME folder
+        next_script = current_dir / target_file
+        
+        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
+        # (This matches the structure implied by your old path)
+        if not next_script.exists():
+            next_script = current_dir.parent / "session_2_tone_production" / target_file
+
+        # 3. Launch if found
+        if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
+            subprocess.Popen([sys.executable, str(next_script)])
+        else:
+            print(f"⚠️ Could not find next script: {target_file}")
+            print(f"   Checked in: {current_dir}")
 
 if __name__ == "__main__":
     script_dir = Path(__file__).parent.resolve()

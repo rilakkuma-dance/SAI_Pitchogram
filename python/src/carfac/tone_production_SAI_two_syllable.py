@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-import pyaudio
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.font_manager as fm
@@ -33,19 +32,10 @@ except ImportError:
     JAX_AVAILABLE = False
     sys.exit(1)
 
-try:
-    import torch
-    import torchaudio
-    WAV2VEC2_AVAILABLE = True
-except ImportError:
-    WAV2VEC2_AVAILABLE = False
-
 # ---------------- Custom Module Imports ----------------
 # Assuming these exist in your 'modules' folder based on your imports
 from modules.visualization_handler import VisualizationHandler, SAIParams
-from modules.phoneme_handler import PhonemeAnalyzer
 from modules.recorder import AudioRecorder
-from modules.tone_grader_word import ToneGraderWord, GradingResult
 
 # ---------------- Setup Functions ----------------
 def setup_chinese_font():
@@ -88,6 +78,44 @@ else:
     font_prop = fm.FontProperties(family='Times New Roman', size=16)
 
 # ---------------- Helper Classes ----------------
+
+class DummyRecorder:
+    """A fake recorder that works even when no microphone is found."""
+    def __init__(self, sample_rate=16000):
+        self.sample_rate = sample_rate
+        self.is_recording = False
+        self.start_time = 0
+        self.callbacks = []
+
+    def add_audio_callback(self, callback):
+        self.callbacks.append(callback)
+
+    def start_recording(self):
+        print("--- DUMMY RECORDING STARTED (No Mic Detected) ---")
+        self.is_recording = True
+        self.start_time = time.time()
+
+    def stop_recording(self):
+        print("--- DUMMY RECORDING STOPPED ---")
+        if not self.is_recording:
+            return None
+        self.is_recording = False
+        
+        # Create 1 second of fake audio (silence/noise)
+        duration = time.time() - self.start_time
+        num_samples = int(duration * self.sample_rate)
+        
+        # Generate random noise so the spectrogram shows *something*
+        fake_audio = np.random.uniform(-0.01, 0.01, num_samples)
+        
+        # Trigger callbacks (like the grader)
+        for cb in self.callbacks:
+            try:
+                cb(fake_audio)
+            except Exception as e:
+                print(f"Callback error: {e}")
+                
+        return fake_audio
 
 class VocabList:
     """Manages the hardcoded vocabulary list"""
@@ -168,7 +196,7 @@ class PracticeSession:
             return None, None
     
     def get_progress_string(self):
-        return f"{self.current_index + 1} of {self.total_items}"
+        return f"{self.current_index + 1} / {self.total_items}"
 
 class VoiceSelector:
     def __init__(self, initial_voice='women'):
@@ -203,41 +231,6 @@ def get_random_practice_set_from_vocablist(vocab_list):
     return practice_set
 
 # ---------------- Processing Handlers ----------------
-
-class SimpleWav2Vec2Handler:
-    """Wav2Vec2 phoneme recognition handler"""
-    def __init__(self, model_name="facebook/wav2vec2-xlsr-53-espeak-cv-ft", sample_rate=16000, target_phonemes="ɕiɛɕiɛ"):
-        self.model_name = model_name
-        self.sample_rate = sample_rate
-        self.enabled = WAV2VEC2_AVAILABLE
-        self.model = None
-        self.feature_extractor = None
-        self.tokenizer = None
-        
-        # Audio buffer for mic recording
-        self.audio_buffer = []
-        self.is_recording = False
-        self.is_processing = False
-        self.result = None
-        self.target_phonemes = target_phonemes
-        self.phoneme_analyzer = PhonemeAnalyzer(self.target_phonemes)
-        self.analysis_results = None
-        self.overall_score = 0.0
-        self.callbacks = []
-
-        if self.enabled:
-            # Placeholder for actual model loading logic if needed
-            print("Wav2Vec2 enabled (Mock mode for structure compatibility)")
-
-    def register_callback(self, callback, *args):
-        self.callbacks.append((callback, args))
-
-    def run_callbacks(self, complete_audio):
-        for callback, args in self.callbacks:
-            try:
-                callback(complete_audio, self.result, self.overall_score, *args)
-            except Exception as e:
-                print(f"Callback error: {e}")
 
 class AudioProcessor:
     def __init__(self, fs=16000):
@@ -392,18 +385,18 @@ class SAIVisualizationWithWav2Vec2:
         self.voice_selector = VoiceSelector()
         self.audio_manager = AudioManager()
         self.practice_session = None 
-        self.wav2vec2_handler = SimpleWav2Vec2Handler(sample_rate=sample_rate, target_phonemes=self.target_phonemes)
-        self.wav2vec2_handler.register_callback(self._handle_processing_complete)
         
         # Simple local audio recorder
         self.is_recording_simple = False
-        self.recorder = AudioRecorder(sample_rate=self.sample_rate)
         self.vocab_list = None
         self.audio_base_path = None
-        
-        # Tone grader
-        self.grader = ToneGraderWord()
+
+        # --- FORCE DUMMY RECORDER ---
+        # Comment out the try/except block above and just use this:
+        print("⚠️ Forcing Dummy Recorder for Lab Computer.")
+        self.recorder = DummyRecorder(sample_rate=self.sample_rate)
         self.recorder.add_audio_callback(self._grade_recording)
+        # ----------------------------
 
         self._setup_dual_visualization()
 
@@ -460,7 +453,6 @@ class SAIVisualizationWithWav2Vec2:
         target_phonemes = item.get('phonemes', 'placeholder')
         
         self.set_reference_text(target_phonemes, reference_pronunciation, translation)
-        self.wav2vec2_handler.target_phonemes = target_phonemes
         self.clear_phoneme_feedback()
 
         # 2. Update the UI Text (Centered, White, Bold)
@@ -649,25 +641,32 @@ class SAIVisualizationWithWav2Vec2:
         return chunk.astype(np.float32), chunk_index
 
     def _setup_mic_stream(self):
-        if self.p is None:
-            self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(
-            format=pyaudio.paFloat32,
-            channels=1,
-            rate=self.sample_rate,
-            input=True,
-            frames_per_buffer=self.chunk_size,
-            stream_callback=self._audio_input_callback
-        )
-
-    def _audio_input_callback(self, in_data, frame_count, time_info, status):
+        # REPLACED PYAUDIO WITH SOUNDDEVICE
         try:
-            audio_data = np.frombuffer(in_data, dtype=np.float32)
+            # Create an InputStream that writes directly to the queue
+            self.input_stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                blocksize=self.chunk_size,
+                callback=self._audio_input_callback,
+                dtype=np.float32
+            )
+            self.input_stream.start()
+            print("Microphone stream started successfully via SoundDevice.")
+        except Exception as e:
+            print(f"Error starting microphone: {e}")
+
+    def _audio_input_callback(self, indata, frames, time_info, status):
+        # SOUNDDEVICE CALLBACK
+        if status:
+            print(status)
+        try:
+            # Make a copy of the input data to ensure thread safety
+            audio_data = indata.copy().flatten()
             if not self.audio_queue.full():
                 self.audio_queue.put(audio_data)
         except Exception:
             pass
-        return (in_data, pyaudio.paContinue)
 
     def process_realtime_audio(self):
         while self.running:
@@ -766,13 +765,11 @@ class SAIVisualizationWithWav2Vec2:
         tones = current_item.get('tone', None)
 
         if type(tones) == list: tones = tones[0]
-        self.grader.grade_audio(audio_data, chinese, pinyin, english, tones)
         
         save_dir = Path("recordings")
         save_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         txt_filename = f"sai_{timestamp}_grade.txt"
-        self.grader.save_results(save_dir / txt_filename)
 
     def start(self):
         self.running = True
@@ -781,19 +778,28 @@ class SAIVisualizationWithWav2Vec2:
         threading.Thread(target=self.process_realtime_audio, daemon=True).start()
         self.ani = animation.FuncAnimation(
             self.fig, self.update_visualization, 
-            interval=int((self.chunk_size / self.sample_rate) * 1000), blit=True
+            interval=int((self.chunk_size / self.sample_rate) * 1000), 
+            blit=True,
+            cache_frame_data=False  # <--- ADD THIS LINE
         )
         print("Starting visualization...")
         plt.show()
 
     def stop(self):
         self.running = False
+        
+        # Stop Playback Stream
         if self.audio_output_stream:
             self.audio_output_stream.stop()
             self.audio_output_stream.close()
-        sd.stop()
+            
+        # Stop Microphone Stream (New SoundDevice logic)
+        if hasattr(self, 'input_stream') and self.input_stream:
+            self.input_stream.stop()
+            self.input_stream.close()
+
         plt.close(self.fig)
-        print("SAIVisualizationWithWav2Vec2 stopped.")
+        print("SAIVisualization stopped.")
 
     def _setup_dual_visualization(self):
         self.fig = plt.figure(figsize=(14, 8))
@@ -868,38 +874,60 @@ class SAIVisualizationWithWav2Vec2:
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
 
     def toggle_record(self, event=None):
-        if self.wav2vec2_handler.is_processing:
-            print("⚠️ Processing... please wait.")
-            return
+        try:
+            if not self.is_recording_simple:
+                # --- START RECORDING ---
+                print("Attempting to start recording...")
+                self.is_recording_simple = True
+                
+                # UI Updates
+                self.btn_record.label.set_text('Stop & Save')
+                self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
+                
+                # Attempt to access hardware
+                self.recorder.start_recording()
+                self.clear_phoneme_feedback()
+                
+                if hasattr(self, 'status_text'):
+                    self.status_text.set_text('● Recording... Speak now!')
+                    self.status_text.set_color('red')
+                self.fig.canvas.draw_idle()
+                
+            else:
+                # --- STOP AND SAVE ---
+                self.is_recording_simple = False
+                
+                # UI Updates
+                self.btn_record.label.set_text('Start Record')
+                self.btn_record.ax.set_facecolor('lightgreen')
+                
+                # Stop hardware
+                recorded_audio = self.recorder.stop_recording() 
+                
+                # Automatically trigger save with metadata
+                if recorded_audio is not None:
+                    self._save_recording_with_metadata(recorded_audio)
+                    if hasattr(self, 'status_text'):
+                        self.status_text.set_text('Processing & Saved!')
+                        self.status_text.set_color('orange')
+                else:
+                    print("Warning: No audio data received from recorder.")
+                
+                self.fig.canvas.draw_idle()
 
-        if not self.is_recording_simple:
-            # START RECORDING
-            self.is_recording_simple = True
-            self.btn_record.label.set_text('Stop & Save')
-            self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
-            self.recorder.start_recording()
-            self.clear_phoneme_feedback()
+        except Exception as e:
+            # --- ERROR HANDLER (Prevents Crash) ---
+            print(f"\n⚠️ RECORDING ERROR: {e}")
+            print("Likely cause: No microphone detected on this computer.")
             
-            if hasattr(self, 'status_text'):
-                self.status_text.set_text('● Recording... Speak now!')
-                self.status_text.set_color('red')
-            self.fig.canvas.draw_idle()
-        else:
-            # STOP AND AUTOMATICALLY SAVE
+            # Reset UI to safe state
             self.is_recording_simple = False
             self.btn_record.label.set_text('Start Record')
-            self.btn_record.ax.set_facecolor('lightgreen')
+            self.btn_record.ax.set_facecolor('gray') # Set to gray to show it's disabled/broken
             
-            # This triggers the callback that handles grading/processing
-            recorded_audio = self.recorder.stop_recording() 
-            
-            # Automatically trigger save with metadata
-            if recorded_audio is not None:
-                self._save_recording_with_metadata(recorded_audio)
-                
             if hasattr(self, 'status_text'):
-                self.status_text.set_text('Processing & Saved!')
-                self.status_text.set_color('orange')
+                self.status_text.set_text('Microphone Error')
+                self.status_text.set_color('red')
             self.fig.canvas.draw_idle()
 
     def next_item(self, event=None):
@@ -1004,7 +1032,6 @@ def main():
             translation = word_info.get('english', '')
             target_phonemes = word_info.get('phonemes', 'placeholder')
             sai_vis.set_reference_text(target_phonemes, reference_pronunciation, translation)
-            sai_vis.wav2vec2_handler.target_phonemes = target_phonemes
             sai_vis._load_audio_file()
 
         sai_vis.start()

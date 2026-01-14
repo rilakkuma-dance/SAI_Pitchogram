@@ -16,6 +16,7 @@ import speech_recognition as sr
 import json
 import time
 import traceback
+import subprocess
 from pathlib import Path
 
 # ---------------- Imports Check ----------------
@@ -78,6 +79,44 @@ else:
     font_prop = fm.FontProperties(family='Times New Roman', size=16)
 
 # ---------------- Helper Classes ----------------
+
+class DummyRecorder:
+    """A fake recorder that works even when no microphone is found."""
+    def __init__(self, sample_rate=16000):
+        self.sample_rate = sample_rate
+        self.is_recording = False
+        self.start_time = 0
+        self.callbacks = []
+
+    def add_audio_callback(self, callback):
+        self.callbacks.append(callback)
+
+    def start_recording(self):
+        print("--- DUMMY RECORDING STARTED (No Mic Detected) ---")
+        self.is_recording = True
+        self.start_time = time.time()
+
+    def stop_recording(self):
+        print("--- DUMMY RECORDING STOPPED ---")
+        if not self.is_recording:
+            return None
+        self.is_recording = False
+        
+        # Create 1 second of fake audio (silence/noise)
+        duration = time.time() - self.start_time
+        num_samples = int(duration * self.sample_rate)
+        
+        # Generate random noise so the spectrogram shows *something*
+        fake_audio = np.random.uniform(-0.01, 0.01, num_samples)
+        
+        # Trigger callbacks (like the grader)
+        for cb in self.callbacks:
+            try:
+                cb(fake_audio)
+            except Exception as e:
+                print(f"Callback error: {e}")
+                
+        return fake_audio
 
 class VocabList:
     """Manages the hardcoded vocabulary list"""
@@ -356,12 +395,15 @@ class SAIVisualizationWithWav2Vec2:
         
         # Simple local audio recorder
         self.is_recording_simple = False
-        self.recorder = AudioRecorder(sample_rate=self.sample_rate)
         self.vocab_list = None
         self.audio_base_path = None
-        
-        # Tone grader
+
+        # --- FORCE DUMMY RECORDER ---
+        # Comment out the try/except block above and just use this:
+        print("⚠️ Forcing Dummy Recorder for Lab Computer.")
+        self.recorder = DummyRecorder(sample_rate=self.sample_rate)
         self.recorder.add_audio_callback(self._grade_recording)
+        # ----------------------------
 
         self._setup_dual_visualization()
 
@@ -743,7 +785,9 @@ class SAIVisualizationWithWav2Vec2:
         threading.Thread(target=self.process_realtime_audio, daemon=True).start()
         self.ani = animation.FuncAnimation(
             self.fig, self.update_visualization, 
-            interval=int((self.chunk_size / self.sample_rate) * 1000), blit=True
+            interval=int((self.chunk_size / self.sample_rate) * 1000), 
+            blit=True,
+            cache_frame_data=False  # <--- ADD THIS LINE
         )
         print("Starting visualization...")
         plt.show()
@@ -837,35 +881,60 @@ class SAIVisualizationWithWav2Vec2:
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
 
     def toggle_record(self, event=None):
-    
-        if not self.is_recording_simple:
-            # START RECORDING
-            self.is_recording_simple = True
-            self.btn_record.label.set_text('Stop & Save')
-            self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
-            self.recorder.start_recording()
-            self.clear_phoneme_feedback()
+        try:
+            if not self.is_recording_simple:
+                # --- START RECORDING ---
+                print("Attempting to start recording...")
+                self.is_recording_simple = True
+                
+                # UI Updates
+                self.btn_record.label.set_text('Stop & Save')
+                self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
+                
+                # Attempt to access hardware
+                self.recorder.start_recording()
+                self.clear_phoneme_feedback()
+                
+                if hasattr(self, 'status_text'):
+                    self.status_text.set_text('● Recording... Speak now!')
+                    self.status_text.set_color('red')
+                self.fig.canvas.draw_idle()
+                
+            else:
+                # --- STOP AND SAVE ---
+                self.is_recording_simple = False
+                
+                # UI Updates
+                self.btn_record.label.set_text('Start Record')
+                self.btn_record.ax.set_facecolor('lightgreen')
+                
+                # Stop hardware
+                recorded_audio = self.recorder.stop_recording() 
+                
+                # Automatically trigger save with metadata
+                if recorded_audio is not None:
+                    self._save_recording_with_metadata(recorded_audio)
+                    if hasattr(self, 'status_text'):
+                        self.status_text.set_text('Processing & Saved!')
+                        self.status_text.set_color('orange')
+                else:
+                    print("Warning: No audio data received from recorder.")
+                
+                self.fig.canvas.draw_idle()
+
+        except Exception as e:
+            # --- ERROR HANDLER (Prevents Crash) ---
+            print(f"\n⚠️ RECORDING ERROR: {e}")
+            print("Likely cause: No microphone detected on this computer.")
             
-            if hasattr(self, 'status_text'):
-                self.status_text.set_text('● Recording... Speak now!')
-                self.status_text.set_color('red')
-            self.fig.canvas.draw_idle()
-        else:
-            # STOP AND AUTOMATICALLY SAVE
+            # Reset UI to safe state
             self.is_recording_simple = False
             self.btn_record.label.set_text('Start Record')
-            self.btn_record.ax.set_facecolor('lightgreen')
+            self.btn_record.ax.set_facecolor('gray') # Set to gray to show it's disabled/broken
             
-            # This triggers the callback that handles grading/processing
-            recorded_audio = self.recorder.stop_recording() 
-            
-            # Automatically trigger save with metadata
-            if recorded_audio is not None:
-                self._save_recording_with_metadata(recorded_audio)
-                
             if hasattr(self, 'status_text'):
-                self.status_text.set_text('Processing & Saved!')
-                self.status_text.set_color('orange')
+                self.status_text.set_text('Microphone Error')
+                self.status_text.set_color('red')
             self.fig.canvas.draw_idle()
 
     def next_item(self, event=None):
@@ -874,6 +943,8 @@ class SAIVisualizationWithWav2Vec2:
             if self.practice_session.current_index >= self.practice_session.total_items - 1:
                 self.status_text.set_text(f"✓ Practice Set Complete ({self.practice_session.total_items}/{self.practice_session.total_items})")
                 self.status_text.set_color('lime')
+                plt.close(self.fig)
+                self._launch_next_script()
                 # Optional: Uncomment the next line to loop back to the start
                 # item = self.practice_session.next_item()
                 # self._load_practice_item(item)
@@ -902,6 +973,27 @@ class SAIVisualizationWithWav2Vec2:
                     self._play_audio_file(audio_data, self.sample_rate)
                     # Change label to "Stop" while playing
                     self.btn_playback.label.set_text('Stop Ref')
+
+    def _launch_next_script(self):
+        # Defines the target filename
+        target_file = "tone_production_SAI_two_syllable.py"
+        current_dir = Path(__file__).parent
+        
+        # 1. Look in the SAME folder
+        next_script = current_dir / target_file
+        
+        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
+        # (This matches the structure implied by your old path)
+        if not next_script.exists():
+            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
+
+        # 3. Launch if found
+        if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
+            subprocess.Popen([sys.executable, str(next_script)])
+        else:
+            print(f"⚠️ Could not find next script: {target_file}")
+            print(f"   Checked in: {current_dir}")
 
 # ---------------- Main Execution ----------------
 

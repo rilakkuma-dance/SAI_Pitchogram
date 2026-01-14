@@ -1,0 +1,35 @@
+AUDIO TONE QUIZ RESULTS
+=======================
+Date: 2026-01-14 16:30:55.749815
+Score: 0/5
+
+Q1: 商店 (shāngdiàn)
+   Audio File: 02_商店_14.wav
+   Correct Tone: 14 | Your Answer: 1
+   Result: WRONG
+   Time: 4.89s
+------------------------------
+Q2: 学校 (xuéxiào)
+   Audio File: 05_学校_24.wav
+   Correct Tone: 24 | Your Answer: 1
+   Result: WRONG
+   Time: 0.72s
+------------------------------
+Q3: 中国 (zhōngguó)
+   Audio File: 01_中国_12.wav
+   Correct Tone: 12 | Your Answer: 1
+   Result: WRONG
+   Time: 0.60s
+------------------------------
+Q4: 面包 (miànbāo)
+   Audio File: 08_面包_41.wav
+   Correct Tone: 41 | Your Answer: 1
+   Result: WRONG
+   Time: 0.75s
+------------------------------
+Q5: 老师 (lǎoshī)
+   Audio File: 06_老师_31.wav
+   Correct Tone: 31 | Your Answer: 1
+   Result: WRONG
+   Time: 0.37s
+------------------------------
