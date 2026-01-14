@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Tone Player</title>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: white;
+    text-align: center;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    width: 600px;
+    margin: 80px auto;
+  }
+
+  .tone {
+    text-align: center;
+  }
+
+  .tone h2 {
+    font-size: 22px;
+    margin-bottom: 12px;
+  }
+
+  button {
+    font-size: 14px;
+    padding: 12px 20px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  #ok-btn {
+    margin-top: 40px;
+    font-size: 18px;
+    padding: 14px 40px;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="grid">
+  <div class="tone">
+    <h2>Tone 1</h2>
+    <button onclick="playTone(1)">Play Tone 1</button>
+  </div>
+
+  <div class="tone">
+    <h2>Tone 2</h2>
+    <button onclick="playTone(2)">Play Tone 2</button>
+  </div>
+
+  <div class="tone">
+    <h2>Tone 3</h2>
+    <button onclick="playTone(3)">Play Tone 3</button>
+  </div>
+
+  <div class="tone">
+    <h2>Tone 4</h2>
+    <button onclick="playTone(4)">Play Tone 4</button>
+  </div>
+</div>
+
+<script>
+  let isPlaying = false;
+  let currentAudio = null;
+
+  const toneFiles = {
+    1: "reference/a1_FV1_MP3.wav",
+    2: "reference/a2_FV2_MP3.wav",
+    3: "reference/a3_FV3_MP3.wav",
+    4: "reference/a4_FV1_MP3.wav"
+  };
+
+  function playTone(toneNum) {
+    if (isPlaying) return;
+
+    const file = toneFiles[toneNum];
+    if (!file) {
+      console.warn("Audio file not found");
+      return;
+    }
+
+    isPlaying = true;
+    currentAudio = new Audio(file);
+
+    currentAudio.onended = () => {
+      isPlaying = false;
+    };
+
+    currentAudio.onerror = () => {
+      console.error("Audio error");
+      isPlaying = false;
+    };
+
+    currentAudio.play();
+  }
+</script>
+
+</body>
+</html>
