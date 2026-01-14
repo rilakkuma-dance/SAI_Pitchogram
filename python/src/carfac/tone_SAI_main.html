@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tone SAI Visualisation</title>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  .container {
+    width: 900px;
+    margin: 40px auto;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-row-gap: 60px;
+    grid-column-gap: 40px;
+  }
+
+  .tone-block {
+    text-align: left;
+  }
+
+  .tone-block h3 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: normal;
+  }
+
+  .tone-block img {
+    width: 100%;
+    height: 160px;
+    object-fit: fill; /* matches ax.set_aspect('auto') */
+  }
+
+  #ok-btn {
+    display: block;
+    margin: 50px auto 0;
+    font-size: 18px;
+    padding: 14px 50px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+  <div class="grid">
+    <div class="tone-block">
+      <h3>Tone 1</h3>
+      <img src="image/tone1_SAI.png" alt="Tone 1 SAI">
+    </div>
+
+    <div class="tone-block">
+      <h3>Tone 2</h3>
+      <img src="image/tone2_SAI.png" alt="Tone 2 SAI">
+    </div>
+
+    <div class="tone-block">
+      <h3>Tone 3</h3>
+      <img src="image/tone3_SAI.png" alt="Tone 3 SAI">
+    </div>
+
+    <div class="tone-block">
+      <h3>Tone 4</h3>
+      <img src="image/tone4_SAI.png" alt="Tone 4 SAI">
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
