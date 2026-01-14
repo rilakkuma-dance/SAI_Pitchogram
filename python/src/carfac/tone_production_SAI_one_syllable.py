@@ -1,6 +1,5 @@
 import sys
 import numpy as np
-import pyaudio
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.font_manager as fm
@@ -33,19 +32,10 @@ except ImportError:
     JAX_AVAILABLE = False
     sys.exit(1)
 
-try:
-    import torch
-    import torchaudio
-    WAV2VEC2_AVAILABLE = True
-except ImportError:
-    WAV2VEC2_AVAILABLE = False
-
 # ---------------- Custom Module Imports ----------------
 # Assuming these exist in your 'modules' folder based on your imports
 from modules.visualization_handler import VisualizationHandler, SAIParams
-from modules.phoneme_handler import PhonemeAnalyzer
 from modules.recorder import AudioRecorder
-from modules.tone_grader_word import ToneGraderWord, GradingResult
 
 # ---------------- Setup Functions ----------------
 def setup_chinese_font():
@@ -210,41 +200,6 @@ def get_random_practice_set_from_vocablist(vocab_list):
 
 # ---------------- Processing Handlers ----------------
 
-class SimpleWav2Vec2Handler:
-    """Wav2Vec2 phoneme recognition handler"""
-    def __init__(self, model_name="facebook/wav2vec2-xlsr-53-espeak-cv-ft", sample_rate=16000, target_phonemes="ɕiɛɕiɛ"):
-        self.model_name = model_name
-        self.sample_rate = sample_rate
-        self.enabled = WAV2VEC2_AVAILABLE
-        self.model = None
-        self.feature_extractor = None
-        self.tokenizer = None
-        
-        # Audio buffer for mic recording
-        self.audio_buffer = []
-        self.is_recording = False
-        self.is_processing = False
-        self.result = None
-        self.target_phonemes = target_phonemes
-        self.phoneme_analyzer = PhonemeAnalyzer(self.target_phonemes)
-        self.analysis_results = None
-        self.overall_score = 0.0
-        self.callbacks = []
-
-        if self.enabled:
-            # Placeholder for actual model loading logic if needed
-            print("Wav2Vec2 enabled (Mock mode for structure compatibility)")
-
-    def register_callback(self, callback, *args):
-        self.callbacks.append((callback, args))
-
-    def run_callbacks(self, complete_audio):
-        for callback, args in self.callbacks:
-            try:
-                callback(complete_audio, self.result, self.overall_score, *args)
-            except Exception as e:
-                print(f"Callback error: {e}")
-
 class AudioProcessor:
     def __init__(self, fs=16000):
         self.fs = fs
@@ -398,8 +353,6 @@ class SAIVisualizationWithWav2Vec2:
         self.voice_selector = VoiceSelector()
         self.audio_manager = AudioManager()
         self.practice_session = None 
-        self.wav2vec2_handler = SimpleWav2Vec2Handler(sample_rate=sample_rate, target_phonemes=self.target_phonemes)
-        self.wav2vec2_handler.register_callback(self._handle_processing_complete)
         
         # Simple local audio recorder
         self.is_recording_simple = False
@@ -408,7 +361,6 @@ class SAIVisualizationWithWav2Vec2:
         self.audio_base_path = None
         
         # Tone grader
-        self.grader = ToneGraderWord()
         self.recorder.add_audio_callback(self._grade_recording)
 
         self._setup_dual_visualization()
@@ -466,7 +418,6 @@ class SAIVisualizationWithWav2Vec2:
         target_phonemes = item.get('phonemes', 'placeholder')
         
         self.set_reference_text(target_phonemes, reference_pronunciation, translation)
-        self.wav2vec2_handler.target_phonemes = target_phonemes
         self.clear_phoneme_feedback()
 
         # 2. Update the UI Text (Centered, White, Bold)
@@ -655,25 +606,32 @@ class SAIVisualizationWithWav2Vec2:
         return chunk.astype(np.float32), chunk_index
 
     def _setup_mic_stream(self):
-        if self.p is None:
-            self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(
-            format=pyaudio.paFloat32,
-            channels=1,
-            rate=self.sample_rate,
-            input=True,
-            frames_per_buffer=self.chunk_size,
-            stream_callback=self._audio_input_callback
-        )
-
-    def _audio_input_callback(self, in_data, frame_count, time_info, status):
+        # REPLACED PYAUDIO WITH SOUNDDEVICE
         try:
-            audio_data = np.frombuffer(in_data, dtype=np.float32)
+            # Create an InputStream that writes directly to the queue
+            self.input_stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                blocksize=self.chunk_size,
+                callback=self._audio_input_callback,
+                dtype=np.float32
+            )
+            self.input_stream.start()
+            print("Microphone stream started successfully via SoundDevice.")
+        except Exception as e:
+            print(f"Error starting microphone: {e}")
+
+    def _audio_input_callback(self, indata, frames, time_info, status):
+        # SOUNDDEVICE CALLBACK
+        if status:
+            print(status)
+        try:
+            # Make a copy of the input data to ensure thread safety
+            audio_data = indata.copy().flatten()
             if not self.audio_queue.full():
                 self.audio_queue.put(audio_data)
         except Exception:
             pass
-        return (in_data, pyaudio.paContinue)
 
     def process_realtime_audio(self):
         while self.running:
@@ -772,13 +730,11 @@ class SAIVisualizationWithWav2Vec2:
         tones = current_item.get('tone', None)
 
         if type(tones) == list: tones = tones[0]
-        self.grader.grade_audio(audio_data, chinese, pinyin, english, tones)
         
         save_dir = Path("recordings")
         save_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         txt_filename = f"sai_{timestamp}_grade.txt"
-        self.grader.save_results(save_dir / txt_filename)
 
     def start(self):
         self.running = True
@@ -794,12 +750,19 @@ class SAIVisualizationWithWav2Vec2:
 
     def stop(self):
         self.running = False
+        
+        # Stop Playback Stream
         if self.audio_output_stream:
             self.audio_output_stream.stop()
             self.audio_output_stream.close()
-        sd.stop()
+            
+        # Stop Microphone Stream (New SoundDevice logic)
+        if hasattr(self, 'input_stream') and self.input_stream:
+            self.input_stream.stop()
+            self.input_stream.close()
+
         plt.close(self.fig)
-        print("SAIVisualizationWithWav2Vec2 stopped.")
+        print("SAIVisualization stopped.")
 
     def _setup_dual_visualization(self):
         self.fig = plt.figure(figsize=(14, 8))
@@ -874,10 +837,7 @@ class SAIVisualizationWithWav2Vec2:
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
 
     def toggle_record(self, event=None):
-        if self.wav2vec2_handler.is_processing:
-            print("⚠️ Processing... please wait.")
-            return
-
+    
         if not self.is_recording_simple:
             # START RECORDING
             self.is_recording_simple = True
@@ -1010,7 +970,6 @@ def main():
             translation = word_info.get('english', '')
             target_phonemes = word_info.get('phonemes', 'placeholder')
             sai_vis.set_reference_text(target_phonemes, reference_pronunciation, translation)
-            sai_vis.wav2vec2_handler.target_phonemes = target_phonemes
             sai_vis._load_audio_file()
 
         sai_vis.start()

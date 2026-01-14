@@ -1,0 +1,35 @@
+AUDIO TONE QUIZ RESULTS
+=======================
+Date: 2026-01-14 13:35:35.343125
+Score: 1/5
+
+Q1: 人 (---)
+   Audio File: 05_人_2.wav
+   Correct Tone: 2 | Your Answer: 1
+   Result: WRONG
+   Time: 0.76s
+------------------------------
+Q2: 去 (---)
+   Audio File: 12_去_4.wav
+   Correct Tone: 4 | Your Answer: 1
+   Result: WRONG
+   Time: 0.14s
+------------------------------
+Q3: 火 (---)
+   Audio File: 08_火_3.wav
+   Correct Tone: 3 | Your Answer: 1
+   Result: WRONG
+   Time: 0.44s
+------------------------------
+Q4: 骂 (---)
+   Audio File: 11_骂_4.wav
+   Correct Tone: 4 | Your Answer: 2
+   Result: WRONG
+   Time: 0.94s
+------------------------------
+Q5: 白 (---)
+   Audio File: 06_白_2.wav
+   Correct Tone: 2 | Your Answer: 2
+   Result: CORRECT
+   Time: 1.05s
+------------------------------

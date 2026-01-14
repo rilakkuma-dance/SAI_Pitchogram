@@ -1,0 +1,7 @@
+Score: 2/5
+
+Q1: 叫 | Ans: 2 | Correct: 4 | WRONG
+Q2: 天 | Ans: 3 | Correct: 1 | WRONG
+Q3: 人 | Ans: 3 | Correct: 2 | WRONG
+Q4: 狗 | Ans: 3 | Correct: 3 | CORRECT
+Q5: 老 | Ans: 3 | Correct: 3 | CORRECT

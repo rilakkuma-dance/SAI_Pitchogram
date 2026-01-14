@@ -1,13 +1,15 @@
-setuptools
-pyaudio
-SpeechRecognition
---extra-index-url https://download.pytorch.org/whl/cu116
-torch
 numpy
-argostranslate
-editdistance
+pyaudio
+matplotlib
 librosa
-git+https://github.com/openai/whisper.git
+sounddevice
+SpeechRecognition
+sounddevice
+soundfile
+librosa
+vis
+jax
+jaxlib
+pyaudio
+torchaudio
 transformers
-panphon
-torchcodec

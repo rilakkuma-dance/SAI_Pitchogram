@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-14 13:29:18.068639
+Score: 3/5
+
+Q1: 人 (---)
+   Audio File: 05_人_2.wav
+   Correct Tone: 2 | Your Answer: 3
+   Result: WRONG
+   Time: 28.30s
+------------------------------
+Q2: 狗 (---)
+   Audio File: 09_狗_3.wav
+   Correct Tone: 3 | Your Answer: 3
+   Result: CORRECT
+   Time: 2.55s
+------------------------------
+Q3: 叫 (---)
+   Audio File: 10_叫_4.wav
+   Correct Tone: 4 | Your Answer: 4
+   Result: CORRECT
+   Time: 2.95s
+------------------------------
+Q4: 老 (---)
+   Audio File: 07_老_3.wav
+   Correct Tone: 3 | Your Answer: 1
+   Result: WRONG
+   Time: 3.23s
+------------------------------
+Q5: 去 (---)
+   Audio File: 12_去_4.wav
+   Correct Tone: 4 | Your Answer: 4
+   Result: CORRECT
+   Time: 4.57s
+------------------------------

@@ -376,7 +376,6 @@ class ToneIntroductionQuizWithSAI:
             sd.stop()
             self._save_results_to_file()
             plt.close(self.fig)
-            self._launch_next_script()
         else:
             # Re-runs the selection logic which resets the button to 'Play Loop'
             self._select_random_item()
@@ -540,7 +539,6 @@ class ToneIntroductionQuizWithSAI:
             self.status_text.set_color('blue')
             
             plt.close(self.fig)
-            self._launch_next_script()
         else:
             self._select_random_item()
 

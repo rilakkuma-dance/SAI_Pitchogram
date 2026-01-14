@@ -10,6 +10,8 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog
 import sys
+import subprocess
+import numpy as np
 
 # Try to import pypinyin
 try:
@@ -29,10 +31,9 @@ class ToneIntroductionQuiz:
         
         if not self.audio_base_path:
             print("❌ No audio folder selected. Exiting.")
-            return
+            sys.exit()
 
         print(f"✅ Using audio from: {self.audio_base_path}")
-        
         self.vocab_items = self._scan_audio_folder()
 
         if not self.vocab_items:
@@ -44,7 +45,7 @@ class ToneIntroductionQuiz:
         self.answered = False
         self.question_count = 0
         self.max_questions = 5
-        self.question_start_time = None
+        self.question_start_time = 0
         self.timer_started = False
         self.used_words = set()
         self.results = []
@@ -66,13 +67,15 @@ class ToneIntroductionQuiz:
 
         root = tk.Tk()
         root.withdraw() 
-        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_two_syllable' folder")
+        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_one_syllable' folder")
         root.destroy()
         if folder_selected: return Path(folder_selected)
         return None
 
     def _scan_audio_folder(self):
         items = []
+        if not self.audio_base_path.exists(): return items
+        
         files = sorted(list(self.audio_base_path.glob("*.wav")))
         for f in files:
             try:
@@ -125,7 +128,7 @@ class ToneIntroductionQuiz:
     def _select_random_item(self):
         available = [i for i in self.vocab_items if i['id'] not in self.used_words]
         if not available:
-            self.used_words = set()
+            self.used_words = set() # Reset if we run out
             available = self.vocab_items
             
         self.current_item = random.choice(available)
@@ -133,7 +136,7 @@ class ToneIntroductionQuiz:
         
         self.answered = False
         self.timer_started = False
-        self.question_start_time = None
+        self.question_start_time = 0
         
         # Reset Button appearance
         self.btn_action.label.set_text('Check')
@@ -161,11 +164,14 @@ class ToneIntroductionQuiz:
                 sd.play(data, sr)
                 sd.wait()
                 
+                # Start Timer AFTER audio finishes
                 self.question_start_time = time.time()
                 self.timer_started = True
+                
                 self.status_text.set_text('Ready for answer')
                 self.status_text.set_color('#27ae60')
             except Exception as e:
+                print(f"Audio Error: {e}")
                 self.status_text.set_text('Audio Error')
             
             self.is_playing = False
@@ -189,19 +195,22 @@ class ToneIntroductionQuiz:
         user_input = self.text_input.text.strip()
         if not user_input: return
 
-        elapsed = time.time() - self.question_start_time
+        # Stop Timer
+        elapsed_time = time.time() - self.question_start_time
+
         correct_tone = str(self.current_item['tone'])
         is_correct = (user_input == correct_tone)
         self.answered = True
 
+        # Store detailed results for the report
         self.results.append({
             'word': self.current_item['chinese'],
             'pinyin': self.current_item['pinyin'],
-            'tone': correct_tone,
-            'user': user_input,
+            'audio': self.current_item['audio'],
+            'correct_tone': correct_tone,
+            'user_input': user_input,
             'correct': is_correct,
-            'time': elapsed,
-            'file': self.current_item['audio']
+            'time': elapsed_time
         })
 
         # Update button to "Next" state
@@ -225,91 +234,41 @@ class ToneIntroductionQuiz:
         if self.question_count >= self.max_questions:
             self._save_results()
             plt.close(self.fig)
-            self._launch_next_script()
         else:
             self._select_random_item()
-
-    def _check_answer(self):
-        if not self.timer_started:
-            self.status_text.set_text('⚠️ Listen first!')
-            self.fig.canvas.draw_idle()
-            return
-            
-        user_input = self.text_input.text.strip().replace(' ', '')
-        if not user_input: return
-
-        elapsed = time.time() - self.question_start_time
-        correct_tone = self.current_item['tone']
-        is_correct = (user_input == correct_tone)
-        self.answered = True
-
-        self.results.append({
-            'word': self.current_item['chinese'],
-            'pinyin': self.current_item['pinyin'],
-            'tone': correct_tone,
-            'user': user_input,
-            'correct': is_correct,
-            'time': elapsed,
-            'file': self.current_item['audio']
-        })
-
-        self.answer_text.set_text(f"Your answer: {user_input}")
-        
-        if is_correct:
-            self.feedback_text.set_text('CORRECT!')
-            self.feedback_text.set_color('#27ae60')
-        else:
-            self.feedback_text.set_text(f'Wrong (Correct: {correct_tone})')
-            self.feedback_text.set_color('#e74c3c')
-            
-        # Update Button to Next state
-        self.btn_action.label.set_text('Next Question')
-        self.btn_action.color = '#27ae60'
-        self.btn_action.hovercolor = '#229954'
-
-        word_info = f"{self.current_item['chinese']} - {self.current_item['pinyin']}"
-        self.status_text.set_text(word_info)
-        self.status_text.set_color('black')
-        self.fig.canvas.draw_idle()
 
     def _save_results(self):
         result_dir = Path(__file__).parent / 'result'
         result_dir.mkdir(exist_ok=True)
-        timestamp = self.session_start_time.strftime('%Y%m%d_%H%M%S')
-        filename = f"quiz_results_{timestamp}.txt"
-        save_path = result_dir / filename
         
-        correct_count = sum(1 for r in self.results if r['correct'])
-        total = len(self.results)
+        ts_str = self.session_start_time.strftime('%Y%m%d_%H%M%S')
+        save_path = result_dir / f"audio_quiz_results_{ts_str}.txt"
         
-        with open(save_path, 'w', encoding='utf-8') as f:
-            f.write("MANDARIN TONE QUIZ RESULTS\n")
-            f.write("==========================\n")
-            f.write(f"Date: {self.session_start_time}\n")
-            f.write(f"Score: {correct_count}/{total}\n\n")
+        total_score = sum(1 for r in self.results if r['correct'])
+        header_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        
+        lines = []
+        lines.append("AUDIO TONE QUIZ RESULTS")
+        lines.append("=======================")
+        lines.append(f"Date: {header_date}")
+        lines.append(f"Score: {total_score}/{self.max_questions}\n")
+        
+        for i, res in enumerate(self.results):
+            status = "CORRECT" if res['correct'] else "WRONG"
+            lines.append(f"Q{i+1}: {res['word']} ({res['pinyin']})")
+            lines.append(f"   Audio File: {res['audio']}")
+            lines.append(f"   Correct Tone: {res['correct_tone']} | Your Answer: {res['user_input']}")
+            lines.append(f"   Result: {status}")
+            lines.append(f"   Time: {res['time']:.2f}s")
+            lines.append("-" * 30)
             
-            for idx, r in enumerate(self.results):
-                f.write(f"Q{idx+1}: {r['word']} ({r['pinyin']})\n")
-                f.write(f"   Correct Tone: {r['tone']} | Your Answer: {r['user']}\n")
-                f.write(f"   Result: {'CORRECT' if r['correct'] else 'WRONG'}\n")
-                f.write("-" * 30 + "\n")
-                
-        print(f"\n✅ Results saved to: {save_path}")
-
-    def next_word(self, event):
-        self.question_count += 1
-        if self.question_count >= self.max_questions:
-            print("\n" + "="*30)
-            print("Quiz Complete!")
-            self._save_results()
-            print("="*30)
-            plt.close(self.fig)
-        else:
-            self._select_random_item()
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        
+        print(f"✅ Report generated: {save_path}")
 
     def show(self):
-        if self.audio_base_path:
-            plt.show()
+        plt.show()
 
 if __name__ == '__main__':
     app = ToneIntroductionQuiz()
