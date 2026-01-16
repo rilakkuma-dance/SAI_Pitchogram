@@ -340,10 +340,9 @@ class SimpleAudioVisualizerWithSAI:
             
             self._save_results_to_csv()
             plt.close(self.fig)
-            self._launch_next_script()
 
     def _save_results_to_csv(self):
-        filename = "session1_spectrogram_practice.csv"
+        filename = "session2_mel_results.csv"
         filepath = self.script_dir / filename
         file_exists = filepath.exists()
         
@@ -392,19 +391,6 @@ class SimpleAudioVisualizerWithSAI:
         
         self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True)
         plt.show()
-
-    def _launch_next_script(self):
-        target_file = "melspectrogram_only_two_syllable.py"
-        next_script = self.script_dir / target_file
-        
-        if not next_script.exists():
-            next_script = self.script_dir.parent / "session_1_tone_recognition" / target_file
-
-        if next_script.exists():
-            print(f"🚀 Launching next script: {next_script}")
-            subprocess.Popen([sys.executable, str(next_script)])
-        else:
-            print(f"⚠️ Could not find next script: {target_file}")
 
 if __name__ == "__main__":
     app = SimpleAudioVisualizerWithSAI()

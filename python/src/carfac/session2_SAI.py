@@ -17,7 +17,15 @@ import json
 import time
 import traceback
 import subprocess
+import random
+import csv
 from pathlib import Path
+
+# ==========================================
+# IMPORT CONFIG HELPER
+# ==========================================
+from sai_config import get_sai_params
+# ==========================================
 
 # ---------------- Imports Check ----------------
 try:
@@ -31,11 +39,8 @@ try:
 except ImportError:
     print("Warning: JAX/CARFAC/SAI not found. Install required packages.")
     JAX_AVAILABLE = False
-    sys.exit(1)
 
-# ---------------- Custom Module Imports ----------------
-# Assuming these exist in your 'modules' folder based on your imports
-from modules.visualization_handler import VisualizationHandler, SAIParams
+from modules.visualization_handler import VisualizationHandler
 from modules.recorder import AudioRecorder
 
 # ---------------- Setup Functions ----------------
@@ -58,7 +63,6 @@ def setup_chinese_font():
     return False
 
 def get_font_path():
-    """Get font path relative to script location"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     possible_paths = [
         os.path.join(script_dir, "DoulosSIL-Regular.ttf"),
@@ -70,7 +74,6 @@ def get_font_path():
             return path
     return None
 
-# Initialize Setup
 setup_chinese_font()
 font_path = get_font_path()
 if font_path:
@@ -81,7 +84,6 @@ else:
 # ---------------- Helper Classes ----------------
 
 class DummyRecorder:
-    """A fake recorder that works even when no microphone is found."""
     def __init__(self, sample_rate=16000):
         self.sample_rate = sample_rate
         self.is_recording = False
@@ -101,76 +103,82 @@ class DummyRecorder:
         if not self.is_recording:
             return None
         self.is_recording = False
-        
-        # Create 1 second of fake audio (silence/noise)
         duration = time.time() - self.start_time
         num_samples = int(duration * self.sample_rate)
-        
-        # Generate random noise so the spectrogram shows *something*
         fake_audio = np.random.uniform(-0.01, 0.01, num_samples)
-        
-        # Trigger callbacks (like the grader)
         for cb in self.callbacks:
             try:
                 cb(fake_audio)
             except Exception as e:
                 print(f"Callback error: {e}")
-                
         return fake_audio
 
 class VocabList:
-    """Manages the hardcoded vocabulary list"""
-    def __init__(self, audio_base_path="mandarin_audio_one_syllable"):
+    """Manages the hardcoded vocabulary list for both 1-syllable and 2-syllable words"""
+    def __init__(self, root_path):
+        self.root_path = Path(root_path)
+        self.valid_items_one = []
+        self.valid_items_two = []
         self.all_items = []
-        self.audio_base_path = Path(audio_base_path)
-        
-        # 15 words - WAV format definitions
-        words = [
-            # Tone 1
-            {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "audio": "01_天_1.wav", "type": "word"},
-            {"id": 2,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "audio": "02_心_1.wav", "type": "word"},
-            {"id": 3,  "chinese": "车", "pinyin": "chē",  "tone": "1", "audio": "03_车_1.wav", "type": "word"},
-            # Tone 2
-            {"id": 4,  "chinese": "学", "pinyin": "xué",  "tone": "2", "audio": "04_学_2.wav", "type": "word"},
-            {"id": 5,  "chinese": "人", "pinyin": "rén",  "tone": "2", "audio": "05_人_2.wav", "type": "word"},
-            {"id": 6,  "chinese": "白", "pinyin": "bái",  "tone": "2", "audio": "06_白_2.wav", "type": "word"},
-            # Tone 3
-            {"id": 7,  "chinese": "老", "pinyin": "lǎo",  "tone": "3", "audio": "07_老_3.wav", "type": "word"},
-            {"id": 8,  "chinese": "火", "pinyin": "huǒ",  "tone": "3", "audio": "08_火_3.wav", "type": "word"},
-            {"id": 9,  "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "audio": "09_狗_3.wav", "type": "word"},
-            # Tone 4
-            {"id": 10, "chinese": "叫", "pinyin": "jiào", "tone": "4", "audio": "10_叫_4.wav", "type": "word"},
-            {"id": 11, "chinese": "骂", "pinyin": "mà",   "tone": "4", "audio": "11_骂_4.wav", "type": "word"},
-            {"id": 12, "chinese": "去", "pinyin": "qù",   "tone": "4", "audio": "12_去_4.wav", "type": "word"},
+
+        # --- 1. Define One-Syllable Words ---
+        words_one = [
+            {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "syllables": 1, "audio": "01_天_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 2,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "syllables": 1, "audio": "02_心_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 3,  "chinese": "车", "pinyin": "chē",  "tone": "1", "syllables": 1, "audio": "03_车_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 4,  "chinese": "学", "pinyin": "xué",  "tone": "2", "syllables": 1, "audio": "04_学_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 5,  "chinese": "人", "pinyin": "rén",  "tone": "2", "syllables": 1, "audio": "05_人_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 6,  "chinese": "白", "pinyin": "bái",  "tone": "2", "syllables": 1, "audio": "06_白_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 7,  "chinese": "老", "pinyin": "lǎo",  "tone": "3", "syllables": 1, "audio": "07_老_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 8,  "chinese": "火", "pinyin": "huǒ",  "tone": "3", "syllables": 1, "audio": "08_火_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 9,  "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "syllables": 1, "audio": "09_狗_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 10, "chinese": "叫", "pinyin": "jiào", "tone": "4", "syllables": 1, "audio": "10_叫_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 11, "chinese": "骂", "pinyin": "mà",   "tone": "4", "syllables": 1, "audio": "11_骂_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 12, "chinese": "去", "pinyin": "qù",   "tone": "4", "syllables": 1, "audio": "12_去_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
         ]
-        
-        all_potential_items = words
-        
-        # Filter to only include items whose audio files actually exist
-        self.all_items = []
-        missing_files = []
-        for item in all_potential_items:
-            audio_path = self.audio_base_path / item['audio']
-            if audio_path.exists():
+
+        # --- 2. Define Two-Syllable Words ---
+        words_two = [
+            {"id": 201, "chinese": "中国", "pinyin": "zhōngguó", "tone": "1-2", "syllables": 2, "audio": "01_中国_12.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 202, "chinese": "商店", "pinyin": "shāngdiàn", "tone": "1-4", "syllables": 2, "audio": "02_商店_14.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 203, "chinese": "明天", "pinyin": "míngtiān", "tone": "2-1", "syllables": 2, "audio": "03_明天_21.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 204, "chinese": "牛奶", "pinyin": "niúnǎi",   "tone": "2-3", "syllables": 2, "audio": "04_牛奶_23.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 205, "chinese": "学校", "pinyin": "xuéxiào",  "tone": "2-4", "syllables": 2, "audio": "05_学校_24.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 206, "chinese": "老师", "pinyin": "lǎoshī",   "tone": "3-1", "syllables": 2, "audio": "06_老师_31.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 207, "chinese": "美国", "pinyin": "měiguó",   "tone": "3-2", "syllables": 2, "audio": "07_美国_32.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 208, "chinese": "面包", "pinyin": "miànbāo",  "tone": "4-1", "syllables": 2, "audio": "08_面包_41.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 209, "chinese": "问题", "pinyin": "wèntí",    "tone": "4-2", "syllables": 2, "audio": "09_问题_42.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 210, "chinese": "电脑", "pinyin": "diànnǎo",  "tone": "4-3", "syllables": 2, "audio": "10_电脑_43.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+        ]
+
+        # --- 3. Validate Files ---
+        print("\nChecking Audio Files...")
+        for item in words_one:
+            full_path = self.root_path / item['folder'] / item['audio']
+            if full_path.exists():
+                self.valid_items_one.append(item)
                 self.all_items.append(item)
             else:
-                missing_files.append(str(audio_path))
-        
-        print(f"\nWAV audio files found: {len(self.all_items)} / {len(all_potential_items)}")
-        if missing_files and len(missing_files) <= 10:
-            print(f"Missing WAV files ({len(missing_files)}):")
-            for f in missing_files:
-                print(f"  - {f}")
+                print(f"  [Missing 1-Syl] {item['folder']}/{item['audio']}")
+
+        for item in words_two:
+            full_path = self.root_path / item['folder'] / item['audio']
+            if full_path.exists():
+                self.valid_items_two.append(item)
+                self.all_items.append(item)
+            else:
+                print(f"  [Missing 2-Syl] {item['folder']}/{item['audio']}")
+
+        print(f"Loaded: {len(self.valid_items_one)} one-syllable, {len(self.valid_items_two)} two-syllable files.")
 
 class PracticeSession:
-    """Manages practice session with multiple words and sentences"""
-    def __init__(self, practice_set, audio_manager, audio_base_path='mandarin_audio_one_syllable'):
+    """Manages practice session with mixed folder sources"""
+    def __init__(self, practice_set, audio_manager, root_path):
         self.practice_set = practice_set
         self.audio_manager = audio_manager
-        self.audio_base_path = Path(audio_base_path)
-        self.practice_session = None
+        self.root_path = Path(root_path)
         self.current_index = 0
-        self.all_items = practice_set['words'] + practice_set['sentences'] # Combine them
+        self.all_items = practice_set['words']
         self.total_items = len(self.all_items)
     
     def get_current_item(self):
@@ -190,11 +198,10 @@ class PracticeSession:
         item = self.get_current_item()
         if not item: return None, None
         
-        # Using the direct filename from VocabList
         audio_filename = item.get('audio')
+        folder_name = item.get('folder', 'mandarin_audio_one_syllable')
         if not audio_filename: return None, None
-
-        audio_path = self.audio_base_path / audio_filename
+        audio_path = self.root_path / folder_name / audio_filename
         
         if audio_path.exists():
             return str(audio_path), None
@@ -216,25 +223,28 @@ class VoiceSelector:
         return f'{self.current_voice.capitalize()} Voice'
 
 class AudioManager:
-    """Minimal Manager to satisfy PracticeSession dependency"""
     def __init__(self, base_dir='audio'):
         self.base_dir = base_dir
 
 def get_random_practice_set_from_vocablist(vocab_list):
-    """Get random practice items from VocabList instance"""
-    import random
+    """Get exactly 3 random one-syllable and 3 random two-syllable words."""
     practice_set = {'words': [], 'sentences': []}
     
-    # Separate words and sentences
-    words = [item for item in vocab_list.all_items if item.get('type') == 'word']
-    sentences = [item for item in vocab_list.all_items if item.get('type') == 'sentence']
-    
-    # Get random words (up to 5)
-    if len(words) >= 3:
-        practice_set['words'] = random.sample(words, 3)
+    if len(vocab_list.valid_items_one) >= 3:
+        selection_one = random.sample(vocab_list.valid_items_one, 3)
     else:
-        practice_set['words'] = words
+        selection_one = vocab_list.valid_items_one 
     
+    if len(vocab_list.valid_items_two) >= 3:
+        selection_two = random.sample(vocab_list.valid_items_two, 3)
+    else:
+        selection_two = vocab_list.valid_items_two 
+        
+    combined_words = selection_one + selection_two
+    random.shuffle(combined_words)
+    practice_set['words'] = combined_words
+    
+    print(f"Generated Practice Set: {len(combined_words)} items (Target: 6)")
     return practice_set
 
 # ---------------- Processing Handlers ----------------
@@ -272,7 +282,6 @@ class AudioProcessor:
             except Exception:
                 pass
 
-        # Fallback
         try:
             if isinstance(audio_chunk, np.ndarray):
                 chunk = audio_chunk.flatten()
@@ -348,16 +357,7 @@ class SAIVisualizationWithWav2Vec2:
         self.processor_file = AudioProcessor(fs=sample_rate)
         self.n_channels = self.processor_realtime.n_channels
 
-        # SAI parameters
-        self.sai_params = SAIParams(
-            num_channels=self.n_channels,
-            sai_width=400,
-            future_lags=399,
-            num_triggers_per_frame=2,
-            trigger_window_width=self.chunk_size + 1,
-            input_segment_width=self.chunk_size,
-            channel_smoothing_scale=0.5
-        )
+        self.sai_params = get_sai_params(self.n_channels, self.chunk_size, smoothing_scale=0.5)
         
         # SAI processors
         self.sai_realtime = SAIProcessor(self.sai_params)
@@ -387,46 +387,136 @@ class SAIVisualizationWithWav2Vec2:
         self.p = None
         self.stream = None
         self.running = False
+
+        self.playback_finished_flag = False
         
         # --- PRACTICE MODE INTEGRATION ---
         self.voice_selector = VoiceSelector()
         self.audio_manager = AudioManager()
         self.practice_session = None 
         
-        # Simple local audio recorder
+        # Recorder Setup
         self.is_recording_simple = False
         self.vocab_list = None
-        self.audio_base_path = None
+        self.root_path = None 
+        
+        # --- NEW ATTRIBUTES FOR SAVING ---
+        self.results = []
+        self.script_dir = Path(__file__).parent
+        self.save_dir = Path("recordings")
+        self.save_dir.mkdir(exist_ok=True)
+        # ---------------------------------
 
-        # --- FORCE DUMMY RECORDER ---
-        # Comment out the try/except block above and just use this:
         print("⚠️ Forcing Dummy Recorder for Lab Computer.")
         self.recorder = DummyRecorder(sample_rate=self.sample_rate)
-        self.recorder.add_audio_callback(self._grade_recording)
-        # ----------------------------
-
+        
         self._setup_dual_visualization()
 
+    def start(self):
+        self.running = True
+        self._setup_audio_playback()
+        self._setup_mic_stream()
+        threading.Thread(target=self.process_realtime_audio, daemon=True).start()
+        self.ani = animation.FuncAnimation(
+            self.fig, self.update_visualization, 
+            interval=int((self.chunk_size / self.sample_rate) * 1000), 
+            blit=True,
+            cache_frame_data=False
+        )
+        print("Starting visualization...")
+        plt.show()
+
+    def stop(self):
+        self.running = False
+        if self.audio_output_stream:
+            self.audio_output_stream.stop()
+            self.audio_output_stream.close()
+        if hasattr(self, 'input_stream') and self.input_stream:
+            self.input_stream.stop()
+            self.input_stream.close()
+        plt.close(self.fig)
+        print("SAIVisualization stopped.")
+
+    # --- CSV SAVING METHOD ---
+    def _save_results_to_csv(self):
+        filename = "session2_SAI_results.csv" 
+        filepath = self.script_dir / filename
+        file_exists = filepath.exists()
+        
+        try:
+            with open(filepath, mode='a', newline='', encoding='utf-8') as file:
+                writer = csv.DictWriter(file, fieldnames=[
+                    'item_idx', 'chinese', 'pinyin', 'syllables', 
+                    'ref_audio', 'user_recording', 'timestamp'
+                ])
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerows(self.results)
+                self.results = [] 
+            print(f"✅ Session log saved to {filepath}")
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
+
+    # --- AUDIO SAVING METHOD ---
+    def save_recorded_audio(self, audio_data):
+        if audio_data is None or len(audio_data) == 0:
+            self.status_text.set_text("No audio captured.")
+            return
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        # CORRECTED: use self.practice_session instead of self.practice_set
+        item = self.practice_session.get_current_item()
+        
+        if not item:
+            item = {'chinese': 'Unknown', 'pinyin': 'unknown', 'syllables': 0, 'audio': 'unknown.wav'}
+            
+        filename = f"rec_{item['chinese']}_{timestamp}.wav"
+        path = self.save_dir / filename
+        
+        try:
+            if np.max(np.abs(audio_data)) > 0:
+                audio_normalized = audio_data / np.max(np.abs(audio_data)) * 0.95
+            else:
+                audio_normalized = audio_data
+            audio_int16 = (audio_normalized * 32767).astype(np.int16)
+
+            with wave.open(str(path), 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(self.sample_rate)
+                wf.writeframes(audio_int16.tobytes())
+            
+            # Log Result
+            self.results.append({
+                # CORRECTED: use self.practice_session
+                'item_idx': self.practice_session.current_index + 1,
+                'chinese': item['chinese'],
+                'pinyin': item['pinyin'],
+                'syllables': item.get('syllables', 0),
+                'ref_audio': item.get('audio', 'NA'), 
+                'user_recording': filename,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            self._save_results_to_csv()
+            
+            self.status_text.set_text(f"✓ Saved: {filename}")
+            self.status_text.set_color('lime')
+        except Exception as e:
+            print(f"Save error: {e}")
+            self.status_text.set_text(f"Error: {str(e)}")
+
+    def _on_playback_finished(self):
+        """Called by sounddevice when stream stops (naturally or manually)"""
+        self.playback_finished_flag = True
+
     def _play_audio_file(self, audio_data, sample_rate):
+        # ... existing cleanup code ...
         if self.audio_output_stream and self.audio_output_stream.active:
             self.audio_output_stream.stop()
         
-        if self.audio_data is not None and self.audio_output_stream:
-            self.audio_output_stream.close()
-
-        if audio_data is None or audio_data.size == 0:
-            print("No audio data to play.")
-            self.audio_data = None
-            self.total_samples = 0
-            return
-
-        self.audio_data = audio_data.copy()
-        if np.max(np.abs(self.audio_data)) > 0:
-            self.audio_data = self.audio_data / np.max(np.abs(self.audio_data)) * 0.9
-        
-        self.total_samples = len(self.audio_data)
-        self.duration = self.total_samples / sample_rate
-        self.current_position = 0
+        # ... existing setup code ...
         self.playback_position = 0.0
         self.loop_count = 0
         
@@ -436,7 +526,8 @@ class SAIVisualizationWithWav2Vec2:
                 channels=1,
                 dtype=np.float32,
                 blocksize=self.chunk_size,
-                callback=self._audio_playback_callback
+                callback=self._audio_playback_callback,
+                finished_callback=self._on_playback_finished  # <--- FIX: Add this line
             )
             self.audio_output_stream.start()
             print(f"Playing reference audio ({self.duration:.1f}s)")
@@ -444,17 +535,9 @@ class SAIVisualizationWithWav2Vec2:
             print(f"Failed to create audio playback: {e}")
             self.audio_playback_enabled = False
 
-    def _get_item_display(self, item):
-        if not item: return "End of Set"
-        if 'chinese' in item and item.get('type') == 'word':
-            return f"WORD: {item['chinese']} ({item['pinyin']}) - {item['english'] if 'english' in item else ''}"
-        else:
-            return f"SENTENCE: {item['chinese']}"
-
     def _load_practice_item(self, item):
         if not item or not self.practice_session: return
         
-        # 1. Update internal phoneme/audio data
         reference_pronunciation = item.get('pinyin', item.get('chinese'))
         translation = item.get('english', '')
         target_phonemes = item.get('phonemes', 'placeholder')
@@ -462,16 +545,14 @@ class SAIVisualizationWithWav2Vec2:
         self.set_reference_text(target_phonemes, reference_pronunciation, translation)
         self.clear_phoneme_feedback()
 
-        # 2. Update the UI Text (Centered, White, Bold)
-        # Format: 中国 (zhōngguó) - 1/10
         progress_str = self.practice_session.get_progress_string()
         display_text = f"{item['chinese']} ({item['pinyin']}) - {progress_str}"
         
         if hasattr(self, 'practice_text'):
             self.practice_text.set_text(display_text)
 
-        # 3. Handle Audio Loading
         audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
+        
         if audio_path and os.path.exists(audio_path):
             audio_data, original_sr = librosa.load(audio_path, sr=None)
             if original_sr != self.sample_rate:
@@ -480,9 +561,10 @@ class SAIVisualizationWithWav2Vec2:
             self.total_samples = len(self.audio_data)
             self.current_position = 0
             
-            # Clear reference view until played
             self.vis_file.img[:] = 0
             self.im_file.set_data(self.vis_file.img)
+        else:
+            print("Audio path invalid or not found.")
         
         if hasattr(self, 'status_text'):
             self.status_text.set_text('Ready')
@@ -498,38 +580,6 @@ class SAIVisualizationWithWav2Vec2:
             self.status_text.set_color('lime')
         self.fig.canvas.draw_idle()
 
-    def _handle_processing_complete(self, user_audio, transcription, score):
-        print(f"Processing complete: Transcription='{transcription}', Score={score:.2f}")
-        if hasattr(self, 'status_text'):
-            if transcription and transcription != "no_audio":
-                self.status_text.set_text(f'Score: {score:.1f}% | {transcription[:30]}...')
-                self.status_text.set_color('yellow' if score < 70 else 'lime')
-            else:
-                self.status_text.set_text('No audio detected')
-                self.status_text.set_color('orange')
-
-        self.vis_realtime.img[:] = 0
-        self.im_realtime.set_data(self.vis_realtime.img)
-        
-        def _process_user_sai():
-            processor = AudioProcessor(self.sample_rate)
-            sai_processor = SAIProcessor(self.sai_params)
-            total_frames = len(user_audio) // self.chunk_size
-            
-            for i in range(total_frames):
-                chunk = user_audio[i * self.chunk_size : (i + 1) * self.chunk_size]
-                nap_output = processor.process_chunk(chunk)
-                sai_output = sai_processor.RunSegment(nap_output)
-                self.vis_realtime.get_vowel_embedding(nap_output)
-                self.vis_realtime.run_frame(sai_output)
-                
-                if self.vis_realtime.img.shape[1] > 1:
-                    self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
-                    self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
-            self.fig.canvas.draw_idle()
-
-        threading.Thread(target=_process_user_sai, daemon=True).start()
-
     def decrease_sai_speed(self, event=None):
         self.sai_speed = max(0.1, self.sai_speed - 0.25)
     def increase_sai_speed(self, event=None):
@@ -538,12 +588,6 @@ class SAIVisualizationWithWav2Vec2:
         self.playback_speed = max(0.25, self.playback_speed - 0.25)
     def increase_audio_speed(self, event=None):
         self.playback_speed = min(5.0, self.playback_speed + 0.25)
-
-    def toggle_voice(self, event=None):
-        new_voice = self.voice_selector.toggle()
-        # Note: self.btn_voice is not defined in setup_dual_visualization in original code, 
-        # but logic exists. Assuming logic handles re-load.
-        self._load_practice_item(self.practice_session.get_current_item())
 
     def on_key_press(self, event):
         if event.key == 'up' or event.key == '+': self.increase_sai_speed()
@@ -593,24 +637,18 @@ class SAIVisualizationWithWav2Vec2:
                 start_pos = int(self.playback_position)
                 speed_factor = self.playback_speed
                 
-                # Calculate indices for this chunk
                 chunk_indices = np.arange(frames) * speed_factor
                 chunk_indices = chunk_indices.astype(int) + start_pos
                 
-                # Check if we have reached or exceeded the end of the audio
                 if np.any(chunk_indices >= self.total_samples):
-                    # Filter indices to only those within range
                     valid_mask = chunk_indices < self.total_samples
                     chunk = np.zeros(frames, dtype=np.float32)
                     
-                    # Fill only the valid part
                     valid_indices = chunk_indices[valid_mask]
                     if len(valid_indices) > 0:
                         chunk[:len(valid_indices)] = self.audio_data[valid_indices]
                     
                     outdata[:len(chunk), 0] = chunk
-                    
-                    # Since we reached the end and loop_audio is False, stop the stream
                     raise sd.CallbackStop
                 else:
                     chunk = self.audio_data[chunk_indices]
@@ -648,9 +686,7 @@ class SAIVisualizationWithWav2Vec2:
         return chunk.astype(np.float32), chunk_index
 
     def _setup_mic_stream(self):
-        # REPLACED PYAUDIO WITH SOUNDDEVICE
         try:
-            # Create an InputStream that writes directly to the queue
             self.input_stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=1,
@@ -664,11 +700,7 @@ class SAIVisualizationWithWav2Vec2:
             print(f"Error starting microphone: {e}")
 
     def _audio_input_callback(self, indata, frames, time_info, status):
-        # SOUNDDEVICE CALLBACK
-        if status:
-            print(status)
         try:
-            # Make a copy of the input data to ensure thread safety
             audio_data = indata.copy().flatten()
             if not self.audio_queue.full():
                 self.audio_queue.put(audio_data)
@@ -691,8 +723,18 @@ class SAIVisualizationWithWav2Vec2:
                 continue
 
     def update_visualization(self, frame):
+        # --- 1. Check if audio finished naturally or was stopped ---
+        if self.playback_finished_flag:
+            self.playback_finished_flag = False
+            # Reset Button UI to "Ready" state
+            self.btn_playback.label.set_text('Play Reference')
+            self.btn_playback.color = 'cyan'
+            self.btn_playback.hovercolor = 'lightblue'
+            # Force a canvas redraw to update the button immediately
+            self.fig.canvas.draw_idle()
+
         try:
-            # File SAI Update
+            # --- 2. File SAI Update (Reference) ---
             if self.audio_data is not None:
                 chunk, chunk_index = self.get_next_file_chunk()
                 if chunk is not None and chunk_index >= 0:
@@ -717,123 +759,133 @@ class SAIVisualizationWithWav2Vec2:
                 self.im_file.set_data(self.vis_file.img)
                 self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
 
-            # User SAI Update
+            # --- 3. User SAI Update (Realtime) ---
+            # The heavy lifting is done in process_realtime_audio thread; 
+            # we just grab the latest image state here.
             current_max_rt = np.max(self.vis_realtime.img) if self.vis_realtime.img.size > 0 else 1
             self.im_realtime.set_data(self.vis_realtime.img)
             self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
 
         except Exception:
             pass
+            
         return [self.im_realtime, self.im_file, self.status_text, self.practice_text, self.progress_text]
-
-    def _save_recording_with_metadata(self, audio_data):
+    
+    def toggle_record(self, event=None):
         try:
-            save_dir = Path("recordings")
-            save_dir.mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            wav_filename = f"sai_{timestamp}.wav"
-            txt_filename = f"sai_{timestamp}.txt"
-            wav_path = save_dir / wav_filename
-            txt_path = save_dir / txt_filename
-            
-            if np.max(np.abs(audio_data)) > 0:
-                audio_normalized = audio_data / np.max(np.abs(audio_data)) * 0.95
-            else:
-                audio_normalized = audio_data
-            
-            audio_int16 = (audio_normalized * 32767).astype(np.int16)
-            
-            with wave.open(str(wav_path), 'wb') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(self.sample_rate)
-                wf.writeframes(audio_int16.tobytes())
-            
-            current_item = self.practice_session.get_current_item()
-            with open(txt_path, 'w', encoding='utf-8') as f:
-                f.write(f"Timestamp: {timestamp}\n")
-                f.write(f"Recording: {wav_filename}\n")
-                f.write(f"Item: {current_item.get('chinese', 'N/A')}\n")
-            
-            print(f"Recording saved: {wav_path}")
-            if hasattr(self, 'status_text'):
-                self.status_text.set_text(f'Saved: {wav_filename}')
-                self.status_text.set_color('lime')
+            if not self.is_recording_simple:
+                print("Attempting to start recording...")
+                self.is_recording_simple = True
+                
+                self.btn_record.label.set_text('Stop & Save')
+                self.btn_record.ax.set_facecolor('#ff4444')
+                
+                self.recorder.start_recording()
+                self.clear_phoneme_feedback()
+                
+                if hasattr(self, 'status_text'):
+                    self.status_text.set_text('● Recording... Speak now!')
+                    self.status_text.set_color('red')
                 self.fig.canvas.draw_idle()
+            else:
+                self.is_recording_simple = False
+                
+                self.btn_record.label.set_text('Start Record')
+                self.btn_record.ax.set_facecolor('lightgreen')
+                
+                recorded_audio = self.recorder.stop_recording() 
+                
+                if recorded_audio is not None:
+                    self.save_recorded_audio(recorded_audio)
+                else:
+                    print("Warning: No audio data received from recorder.")
+                
+                self.fig.canvas.draw_idle()
+
         except Exception as e:
-            print(f"❌ Error saving recording: {e}")
+            print(f"\n⚠️ RECORDING ERROR: {e}")
+            self.is_recording_simple = False
+            self.btn_record.label.set_text('Start Record')
+            self.btn_record.ax.set_facecolor('gray')
+            if hasattr(self, 'status_text'):
+                self.status_text.set_text('Microphone Error')
+                self.status_text.set_color('red')
+            self.fig.canvas.draw_idle()
 
-    def _grade_recording(self, audio_data):
-        if not self.practice_session: return
-        current_item = self.practice_session.get_current_item()
-        chinese = current_item.get('chinese', None)
-        pinyin = current_item.get('pinyin', None)
-        english = current_item.get('english', None)
-        tones = current_item.get('tone', None)
+    def next_item(self, event=None):
+        if self.practice_session:
+            if self.practice_session.current_index >= self.practice_session.total_items - 1:
+                self.status_text.set_text(f"✓ Practice Set Complete ({self.practice_session.total_items}/{self.practice_session.total_items})")
+                self.status_text.set_color('lime')
+                plt.close(self.fig)
+                self._launch_next_script()
+            else:
+                item = self.practice_session.next_item()
+                self._load_practice_item(item)
+        self.fig.canvas.draw_idle()
 
-        if type(tones) == list: tones = tones[0]
-        
-        save_dir = Path("recordings")
-        save_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        txt_filename = f"sai_{timestamp}_grade.txt"
-
-    def start(self):
-        self.running = True
-        self._setup_audio_playback()
-        self._setup_mic_stream()
-        threading.Thread(target=self.process_realtime_audio, daemon=True).start()
-        self.ani = animation.FuncAnimation(
-            self.fig, self.update_visualization, 
-            interval=int((self.chunk_size / self.sample_rate) * 1000), 
-            blit=True,
-            cache_frame_data=False  # <--- ADD THIS LINE
-        )
-        print("Starting visualization...")
-        plt.show()
-
-    def stop(self):
-        self.running = False
-        
-        # Stop Playback Stream
-        if self.audio_output_stream:
+    def toggle_playback(self, event=None):
+        if self.audio_output_stream and self.audio_output_stream.active:
+            # --- STOPPING MANUALLY ---
             self.audio_output_stream.stop()
-            self.audio_output_stream.close()
-            
-        # Stop Microphone Stream (New SoundDevice logic)
-        if hasattr(self, 'input_stream') and self.input_stream:
-            self.input_stream.stop()
-            self.input_stream.close()
+            self.btn_playback.label.set_text('Play Reference')
+            self.btn_playback.color = 'cyan'          # Reset to default color
+            self.btn_playback.hovercolor = 'lightblue'
+        else:
+            # --- STARTING PLAYBACK ---
+            current_item = self.practice_session.get_current_item()
+            if current_item:
+                audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
+                if audio_path and os.path.exists(audio_path):
+                    audio_data, original_sr = librosa.load(audio_path, sr=None)
+                    if original_sr != self.sample_rate:
+                        audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
+                    
+                    self.playback_position = 0.0 
+                    self._play_audio_file(audio_data, self.sample_rate)
+                    
+                    self.btn_playback.label.set_text('Stop Ref')
+                    self.btn_playback.color = '#ff9999'       # Set to Light Red to indicate activity
+                    self.btn_playback.hovercolor = '#ff6666'  # Darker Red for hover
+        
+        # Force the UI to redraw immediately so the label/color update shows up
+        self.fig.canvas.draw_idle()
 
-        plt.close(self.fig)
-        print("SAIVisualization stopped.")
+    def _launch_next_script(self):
+        target_file = "tone_production_SAI_two_syllable.py"
+        current_dir = Path(__file__).parent
+        next_script = current_dir / target_file
+        if not next_script.exists():
+            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
+
+        if next_script.exists():
+            print(f"🚀 Launching next script: {next_script}")
+            subprocess.Popen([sys.executable, str(next_script)])
+        else:
+            print(f"⚠️ Could not find next script: {target_file}")
 
     def _setup_dual_visualization(self):
         self.fig = plt.figure(figsize=(14, 8))
-        # Matches the Spectrogram grid: High visual area, medium text area, small control area
         gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1.5, 0.5])
 
-        # LEFT SAI display (Your Audio - Live)
         self.ax_realtime = self.fig.add_subplot(gs[0, 0])
         self.im_realtime = self.ax_realtime.imshow(
             self.vis_realtime.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='magma', vmin=0, vmax=255
+            cmap='jet', vmin=0, vmax=255  # <--- CHANGED TO JET FOR HIGH CONTRAST
         )
         self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=12, weight='bold')
         self.ax_realtime.axis('off')
 
-        # RIGHT SAI display (Reference Audio)
         self.ax_file = self.fig.add_subplot(gs[0, 1])
         self.im_file = self.ax_file.imshow(
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='magma', vmin=0, vmax=255
+            cmap='jet', vmin=0, vmax=255  # <--- CHANGED TO JET FOR HIGH CONTRAST
         )
         self.ax_file.set_title('Reference Pattern', color='cyan', fontsize=12, weight='bold')
         self.ax_file.axis('off')
 
-        # Practice info area (Lower Middle)
         self.ax_practice = self.fig.add_subplot(gs[1, :])
         self.ax_practice.axis('off')
         
@@ -843,7 +895,6 @@ class SAIVisualizationWithWav2Vec2:
             progress = self.practice_session.get_progress_string()
             item_text = f"{current_item['chinese']} ({current_item['pinyin']}) - {progress}"
         
-        # Center-aligned bold text exactly like the spectrogram UI
         self.practice_text = self.ax_practice.text(
             0.5, 0.6, item_text, transform=self.ax_practice.transAxes,
             color='white', ha='center', fontsize=16, weight='bold'
@@ -854,165 +905,38 @@ class SAIVisualizationWithWav2Vec2:
             color='yellow', ha='center', fontsize=11
         )
 
-        # Progress tracking (optional hidden text for logic compatibility)
         self.progress_text = self.ax_practice.text(0, 0, "", alpha=0) 
 
-        # --- Buttons (Matching the Spectrogram UI positions/colors) ---
         from matplotlib.widgets import Button
         
-        # 1. Play Reference Button
         self.ax_play_button = plt.axes([0.25, 0.05, 0.15, 0.04])
         self.btn_playback = Button(self.ax_play_button, 'Play Reference', color='cyan', hovercolor='lightblue')
         self.btn_playback.on_clicked(self.toggle_playback)
 
-        # 2. Record / Stop & Save Button
         self.ax_rec_button = plt.axes([0.42, 0.05, 0.18, 0.04])
         self.btn_record = Button(self.ax_rec_button, 'Start Recording', color='lime', hovercolor='green')
         self.btn_record.on_clicked(self.toggle_record)
 
-        # 3. Next Item Button
         self.ax_next_button = plt.axes([0.62, 0.05, 0.15, 0.04])
         self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange', hovercolor='yellow')
         self.btn_next.on_clicked(self.next_item)
 
-        # Background color
         self.fig.patch.set_facecolor('#121212')
         plt.subplots_adjust(left=0.05, right=0.95, top=0.92, bottom=0.1, hspace=0.2)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
-
-    def toggle_record(self, event=None):
-        try:
-            if not self.is_recording_simple:
-                # --- START RECORDING ---
-                print("Attempting to start recording...")
-                self.is_recording_simple = True
-                
-                # UI Updates
-                self.btn_record.label.set_text('Stop & Save')
-                self.btn_record.ax.set_facecolor('#ff4444') # Brighter red
-                
-                # Attempt to access hardware
-                self.recorder.start_recording()
-                self.clear_phoneme_feedback()
-                
-                if hasattr(self, 'status_text'):
-                    self.status_text.set_text('● Recording... Speak now!')
-                    self.status_text.set_color('red')
-                self.fig.canvas.draw_idle()
-                
-            else:
-                # --- STOP AND SAVE ---
-                self.is_recording_simple = False
-                
-                # UI Updates
-                self.btn_record.label.set_text('Start Record')
-                self.btn_record.ax.set_facecolor('lightgreen')
-                
-                # Stop hardware
-                recorded_audio = self.recorder.stop_recording() 
-                
-                # Automatically trigger save with metadata
-                if recorded_audio is not None:
-                    self._save_recording_with_metadata(recorded_audio)
-                    if hasattr(self, 'status_text'):
-                        self.status_text.set_text('Processing & Saved!')
-                        self.status_text.set_color('orange')
-                else:
-                    print("Warning: No audio data received from recorder.")
-                
-                self.fig.canvas.draw_idle()
-
-        except Exception as e:
-            # --- ERROR HANDLER (Prevents Crash) ---
-            print(f"\n⚠️ RECORDING ERROR: {e}")
-            print("Likely cause: No microphone detected on this computer.")
-            
-            # Reset UI to safe state
-            self.is_recording_simple = False
-            self.btn_record.label.set_text('Start Record')
-            self.btn_record.ax.set_facecolor('gray') # Set to gray to show it's disabled/broken
-            
-            if hasattr(self, 'status_text'):
-                self.status_text.set_text('Microphone Error')
-                self.status_text.set_color('red')
-            self.fig.canvas.draw_idle()
-
-    def next_item(self, event=None):
-        if self.practice_session:
-            # Check if we are about to wrap around
-            if self.practice_session.current_index >= self.practice_session.total_items - 1:
-                self.status_text.set_text(f"✓ Practice Set Complete ({self.practice_session.total_items}/{self.practice_session.total_items})")
-                self.status_text.set_color('lime')
-                plt.close(self.fig)
-                self._launch_next_script()
-                # Optional: Uncomment the next line to loop back to the start
-                # item = self.practice_session.next_item()
-                # self._load_practice_item(item)
-            else:
-                item = self.practice_session.next_item()
-                self._load_practice_item(item)
-        self.fig.canvas.draw_idle()
-
-    def toggle_playback(self, event=None):
-        # If already playing, stop it
-        if self.audio_output_stream and self.audio_output_stream.active:
-            self.audio_output_stream.stop()
-            self.btn_playback.label.set_text('Play Reference')
-        else:
-            current_item = self.practice_session.get_current_item()
-            if current_item:
-                audio_path, _ = self.practice_session.get_audio_for_current(self.voice_selector.current_voice)
-                if audio_path and os.path.exists(audio_path):
-                    audio_data, original_sr = librosa.load(audio_path, sr=None)
-                    if original_sr != self.sample_rate:
-                        audio_data = librosa.resample(audio_data, orig_sr=original_sr, target_sr=self.sample_rate)
-                    
-                    # IMPORTANT: Reset position to start from beginning
-                    self.playback_position = 0.0 
-                    
-                    self._play_audio_file(audio_data, self.sample_rate)
-                    # Change label to "Stop" while playing
-                    self.btn_playback.label.set_text('Stop Ref')
-
-    def _launch_next_script(self):
-        # Defines the target filename
-        target_file = "tone_production_SAI_two_syllable.py"
-        current_dir = Path(__file__).parent
-        
-        # 1. Look in the SAME folder
-        next_script = current_dir / target_file
-        
-        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
-        # (This matches the structure implied by your old path)
-        if not next_script.exists():
-            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
-
-        # 3. Launch if found
-        if next_script.exists():
-            print(f"🚀 Launching next script: {next_script}")
-            subprocess.Popen([sys.executable, str(next_script)])
-        else:
-            print(f"⚠️ Could not find next script: {target_file}")
-            print(f"   Checked in: {current_dir}")
-
 # ---------------- Main Execution ----------------
 
 def main():
     parser = argparse.ArgumentParser(description="SAI Visualization and Mandarin Pronunciation Practice Tool.")
     parser.add_argument("--word", type=str, help="Specify a single Mandarin word for practice.")
-    parser.add_argument("--sentence", type=int, help="Specify a sentence ID for practice.")
     args = parser.parse_args()
 
-    # Setup audio base path
     script_dir = Path(__file__).parent
-    audio_base = script_dir / 'mandarin_audio_one_syllable'
     
-    # Initialize VocabList
-    vocab_list = VocabList(audio_base_path=str(audio_base))
+    vocab_list = VocabList(root_path=str(script_dir))
     
     if len(vocab_list.all_items) == 0:
-        print("❌ No audio files found. Check your reference directory structure.")
-        # Proceeding anyway to show UI but warn
+        print("❌ No audio files found in subfolders. Check your directory structure.")
     
     practice_set = None
     audio_file_path = None
@@ -1022,38 +946,33 @@ def main():
         word_info = next((item for item in vocab_list.all_items 
                           if item.get('type') == 'word' and item.get('chinese') == args.word), None)
         if word_info:
-            audio_file_path = str(audio_base / word_info.get('audio'))
+            audio_file_path = str(script_dir / word_info['folder'] / word_info['audio'])
             print(f"Single word mode: {word_info['chinese']} ({word_info['pinyin']})")
         else:
             print(f"Word '{args.word}' not found in vocabulary.")
             return 1
-
-    elif args.sentence:
-        # Note: Vocabulary list in this version only has words, but logic remains for future extension
-        print("Sentence mode not fully supported with current hardcoded vocab list.")
-        return 1
     
     else:
-        # Practice Mode
-        print("--- Starting in Practice Mode (5 random items) ---")
+        print("--- Starting in Practice Mode (3 One-Syl + 3 Two-Syl) ---")
         practice_set = get_random_practice_set_from_vocablist(vocab_list)
-        if not practice_set['words'] and not practice_set['sentences']:
-            print("❌ No practice items found.")
+        
+        if not practice_set['words']:
+            print("❌ No practice items generated.")
             return 1
-        word_info = practice_set['words'][0] if practice_set['words'] else practice_set['sentences'][0]
+        word_info = practice_set['words'][0]
 
     try:
         sai_vis = SAIVisualizationWithWav2Vec2(
             audio_file_path=audio_file_path,
             playback_speed=1.0, 
-            loop_audio=(practice_set is not None)
+            loop_audio=False
         )
 
         sai_vis.vocab_list = vocab_list
-        sai_vis.audio_base_path = audio_base
+        sai_vis.root_path = script_dir 
         
         if practice_set:
-            practice_session = PracticeSession(practice_set, sai_vis.audio_manager, audio_base_path=str(audio_base))
+            practice_session = PracticeSession(practice_set, sai_vis.audio_manager, root_path=str(script_dir))
             sai_vis.practice_session = practice_session
             sai_vis._load_practice_item(practice_session.get_current_item())
             

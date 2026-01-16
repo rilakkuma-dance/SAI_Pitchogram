@@ -10,21 +10,20 @@ import random
 import os
 import time
 import subprocess 
-import csv # Added for CSV support
+import csv 
 from datetime import datetime
-# ... existing imports ...
-import csv
-from datetime import datetime
+
+# ==========================================
+# IMPORT THE NEW CONFIGURATION HELPER
+# ==========================================
+from sai_config import get_sai_params
+# ==========================================
 
 # ==========================================
 # FIX: CONFIGURE FONTS FOR CHINESE SUPPORT
 # ==========================================
-import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False  # Ensures minus signs show correctly
-# ==========================================
-
-# ... rest of the code ...
+plt.rcParams['axes.unicode_minus'] = False 
 
 # JAX/CARFAC/SAI imports
 try:
@@ -39,7 +38,7 @@ except ImportError:
     JAX_AVAILABLE = False
     sys.exit(1)
 
-from modules.visualization_handler import VisualizationHandler, SAIParams
+from modules.visualization_handler import VisualizationHandler
 
 # -----------------------------------------------------------
 # Audio Processor Class
@@ -165,15 +164,18 @@ class ToneIntroductionQuizMixed:
         # 4. SAI Setup
         self.processor = AudioProcessor(fs=self.sample_rate)
         self.n_channels = self.processor.n_channels
-        self.sai_params = SAIParams(
-            num_channels=self.n_channels, sai_width=400, future_lags=399,
-            num_triggers_per_frame=2, trigger_window_width=self.chunk_size + 1,
-            input_segment_width=self.chunk_size, channel_smoothing_scale=0.1
-        )
+        
+        # ========================================================
+        # REFACTORED: USING CONFIG FILE
+        # ========================================================
+        self.sai_params = get_sai_params(self.n_channels, self.chunk_size)
+        # ========================================================
+
         self.sai_processor = SAIProcessor(self.sai_params)
         self.vis = VisualizationHandler(self.sample_rate, self.sai_params)
         
-        # RGB Buffer
+        # RGB Buffer (Note: Width 400 must match SAI_WIDTH in sai_config.py)
+        # Ideally, you should import SAI_WIDTH from config too, but hardcoding 400 is okay for now.
         self.rgb_img = np.zeros((self.n_channels, 400, 3), dtype=np.float32)
 
         # 5. Audio Playback Variables
@@ -185,7 +187,7 @@ class ToneIntroductionQuizMixed:
         self.answered = False
         self.question_count = 0
         self.max_questions = len(self.vocab_items)
-        self.results = [] # Store results for CSV
+        self.results = [] 
         
         self.fig = plt.figure(figsize=(10, 10))
         self.fig.patch.set_facecolor('white')
@@ -249,13 +251,9 @@ class ToneIntroductionQuizMixed:
         self.status_text = self.ax_ui.text(0.5, 0.46, 'Click Play Loop to start', 
                                            ha='center', fontsize=10, color='#7f8c8d')
 
-        # ========================================================
-        # NEW PARAGRAPH ADDED HERE (at y=0.42)
-        # ========================================================
         self.instructions = self.ax_ui.text(0.5, 0.42, 
             "Each audio contains one or two tones. Identify the tone(s) and enter the corresponding number(s) (e.g., 1, 2, 12, 31).",
             ha='center', va='top', fontsize=9, color='black')
-        # ========================================================
 
         self.ax_ui.text(0.28, 0.33, 'Tone(s):', ha='right', va='center', fontsize=10)
         ax_input = plt.axes([0.3, 0.30, 0.4, 0.06]) 

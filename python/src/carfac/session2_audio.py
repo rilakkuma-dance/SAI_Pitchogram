@@ -276,7 +276,7 @@ class SimpleAudioVisualizerWithSAI:
         self.fig.canvas.draw_idle()
 
     def _save_results_to_csv(self):
-        filename = "session1_practice_log.csv"
+        filename = "session2_audio_results.csv"
         filepath = self.script_dir / filename
         file_exists = filepath.exists()
         
