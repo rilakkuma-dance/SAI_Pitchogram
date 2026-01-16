@@ -129,7 +129,7 @@ class SimpleAudioVisualizerWithSAI:
         
         # Setup Data
         self.practice_set = PracticeSet(self.script_dir)
-        self.save_dir = self.script_dir / "user_recordings"
+        self.save_dir = self.script_dir / "audio_recording"
         self.save_dir.mkdir(exist_ok=True)
         
         self.running = False
@@ -208,7 +208,7 @@ class SimpleAudioVisualizerWithSAI:
                 'pinyin': item['pinyin'],
                 'syllables': item['syllables'],
                 'ref_audio': item['audio_path'].name,
-                'user_recording': filename,
+                'audio_recording': filename,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
@@ -256,7 +256,7 @@ class SimpleAudioVisualizerWithSAI:
                     'pinyin': current['pinyin'],
                     'syllables': current['syllables'],
                     'ref_audio': current['audio_path'].name,
-                    'user_recording': "SKIPPED",
+                    'audio_recording': "SKIPPED",
                     'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 })
 
@@ -284,7 +284,7 @@ class SimpleAudioVisualizerWithSAI:
             with open(filepath, mode='a', newline='', encoding='utf-8') as file:
                 writer = csv.DictWriter(file, fieldnames=[
                     'item_idx', 'chinese', 'pinyin', 'syllables', 
-                    'ref_audio', 'user_recording', 'timestamp'
+                    'ref_audio', 'audio_recording', 'timestamp'
                 ])
                 if not file_exists:
                     writer.writeheader()

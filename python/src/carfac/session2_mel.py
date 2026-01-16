@@ -173,7 +173,7 @@ class SimpleAudioVisualizerWithSAI:
         self.recorded_frames = []
         self.reference_audio_playing = False
         
-        self.save_dir = self.script_dir / "user_recordings"
+        self.save_dir = self.script_dir / "mel_recording"
         self.save_dir.mkdir(exist_ok=True)
         
         self.results = [] 
@@ -258,7 +258,7 @@ class SimpleAudioVisualizerWithSAI:
                 'pinyin': item['pinyin'],
                 'syllables': item['syllables'],
                 'ref_audio': item['audio_path'].name,
-                'user_recording': filename,
+                'mel_recording': filename,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
             
@@ -350,7 +350,7 @@ class SimpleAudioVisualizerWithSAI:
             with open(filepath, mode='a', newline='', encoding='utf-8') as file:
                 writer = csv.DictWriter(file, fieldnames=[
                     'item_idx', 'chinese', 'pinyin', 'syllables', 
-                    'ref_audio', 'user_recording', 'timestamp'
+                    'ref_audio', 'mel_recording', 'timestamp'
                 ])
                 if not file_exists:
                     writer.writeheader()

@@ -403,7 +403,7 @@ class SAIVisualizationWithWav2Vec2:
         # --- NEW ATTRIBUTES FOR SAVING ---
         self.results = []
         self.script_dir = Path(__file__).parent
-        self.save_dir = Path("recordings")
+        self.save_dir = Path("sai_recording")
         self.save_dir.mkdir(exist_ok=True)
         # ---------------------------------
 
