@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-15 16:18:37.146247
+Score: 3/5
+
+Q1: 老师 (lǎoshī)
+   Audio File: 06_老师_31.wav
+   Correct Tone: 31 | Your Answer: 31
+   Result: CORRECT
+   Time: 8.61s
+------------------------------
+Q2: 电脑 (diànnǎo)
+   Audio File: 10_电脑_43.wav
+   Correct Tone: 43 | Your Answer: 42
+   Result: WRONG
+   Time: 12.28s
+------------------------------
+Q3: 学校 (xuéxiào)
+   Audio File: 05_学校_24.wav
+   Correct Tone: 24 | Your Answer: 24
+   Result: CORRECT
+   Time: 18.57s
+------------------------------
+Q4: 牛奶 (niúnǎi)
+   Audio File: 04_牛奶_23.wav
+   Correct Tone: 23 | Your Answer: 13
+   Result: WRONG
+   Time: 10.07s
+------------------------------
+Q5: 明天 (míngtiān)
+   Audio File: 03_明天_21.wav
+   Correct Tone: 21 | Your Answer: 21
+   Result: CORRECT
+   Time: 9.44s
+------------------------------

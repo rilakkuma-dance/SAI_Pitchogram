@@ -1,0 +1,7 @@
+question_idx,chinese,pinyin,syllables,audio,correct_tone,user_answer,is_correct,time_seconds,timestamp
+1,骂,mà,1,11_骂_4.wav,4,4,True,11.17,2026-01-16 16:31:12
+2,商店,shāngdiàn,2,02_商店_14.wav,14,14,True,4.39,2026-01-16 16:31:17
+3,牛奶,niúnǎi,2,04_牛奶_23.wav,23,24,False,3.77,2026-01-16 16:31:21
+4,面包,miànbāo,2,08_面包_41.wav,41,41,True,3.68,2026-01-16 16:31:25
+5,狗,gǒu,1,09_狗_3.wav,3,42,False,11.01,2026-01-16 16:31:36
+6,火,huǒ,1,08_火_3.wav,3,3,True,3.57,2026-01-16 16:31:40

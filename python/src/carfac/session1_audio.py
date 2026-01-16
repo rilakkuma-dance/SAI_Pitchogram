@@ -12,20 +12,15 @@ from tkinter import filedialog
 import sys
 import subprocess
 import numpy as np
+import csv 
 
 # Try to import pypinyin
-# --- AUTO-INSTALLER ---
 try:
     from pypinyin import pinyin, Style
     HAS_PYPINYIN = True
 except ImportError:
     print("⚠️ pypinyin not found. Installing it automatically...")
-    import subprocess
-    import sys
-    # Install specifically for the running python version
     subprocess.check_call([sys.executable, "-m", "pip", "install", "pypinyin"])
-    
-    # Try importing again
     try:
         from pypinyin import pinyin, Style
         HAS_PYPINYIN = True
@@ -33,7 +28,6 @@ except ImportError:
     except ImportError:
         HAS_PYPINYIN = False
         print("❌ Automatic installation failed. Pinyin will be disabled.")
-# ----------------------
 
 class ToneIntroductionQuiz:
     def __init__(self):
@@ -41,64 +35,81 @@ class ToneIntroductionQuiz:
         plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial']
         plt.rcParams['axes.unicode_minus'] = False 
         
-        # 2. PATH FINDING
-        self.audio_base_path = self._find_audio_folder()
+        # 2. PATH FINDING & LOADING
+        self.script_dir = Path(__file__).parent.resolve()
         
-        if not self.audio_base_path:
-            print("❌ No audio folder selected. Exiting.")
+        items_one = self._load_from_folder('mandarin_audio_one_syllable')
+        items_two = self._load_from_folder('mandarin_audio_two_syllable')
+
+        if not items_one and not items_two:
+            print("❌ No audio folders found. Exiting.")
             sys.exit()
 
-        print(f"✅ Using audio from: {self.audio_base_path}")
-        self.vocab_items = self._scan_audio_folder()
+        # 3. SELECT 3 FROM EACH
+        selected_one = []
+        selected_two = []
 
-        if not self.vocab_items:
-            print("⚠️ Folder found, but no .wav files inside!")
-            self.vocab_items = [{"id":0, "chinese":"Error", "pinyin":"-", "tone":"0", "audio": None}]
+        if len(items_one) >= 3:
+            selected_one = random.sample(items_one, 3)
+        else:
+            selected_one = items_one 
+            
+        if len(items_two) >= 3:
+            selected_two = random.sample(items_two, 3)
+        else:
+            selected_two = items_two 
+            
+        self.vocab_items = selected_one + selected_two
+        random.shuffle(self.vocab_items)
+        
+        print(f"✅ Loaded {len(self.vocab_items)} questions ({len(selected_one)} from 1-syllable, {len(selected_two)} from 2-syllable).")
 
-        # 3. GAME STATE
+        # 4. GAME STATE
         self.current_item = None
         self.answered = False
         self.question_count = 0
-        self.max_questions = 5
+        self.max_questions = len(self.vocab_items) 
         self.question_start_time = 0
         self.timer_started = False
-        self.used_words = set()
         self.results = []
         self.session_start_time = datetime.now()
         self.is_playing = False
 
-        # 4. SETUP UI
+        # 5. SETUP UI
         self.fig = plt.figure(figsize=(6, 8))
         self.fig.patch.set_facecolor('white')
         self._setup_interface()
-        self._select_random_item()
+        
+        if self.vocab_items:
+            self.current_item = self.vocab_items[0]
+            self._update_display()
+        else:
+            print("Error: No vocab items loaded.")
 
-    def _find_audio_folder(self):
-        script_dir = Path(__file__).parent.resolve()
-        potential_path = script_dir / 'mandarin_audio_one_syllable'
-        if potential_path.exists(): return potential_path
-        potential_path = script_dir.parent / 'mandarin_audio_one_syllable'
-        if potential_path.exists(): return potential_path
-
-        root = tk.Tk()
-        root.withdraw() 
-        folder_selected = filedialog.askdirectory(title="Select the 'mandarin_audio_one_syllable' folder")
-        root.destroy()
-        if folder_selected: return Path(folder_selected)
+    def _find_folder(self, folder_name):
+        path = self.script_dir / folder_name
+        if path.exists(): return path
+        path = self.script_dir.parent / folder_name
+        if path.exists(): return path
         return None
 
-    def _scan_audio_folder(self):
+    def _load_from_folder(self, folder_name):
+        folder_path = self._find_folder(folder_name)
         items = []
-        if not self.audio_base_path.exists(): return items
         
-        files = sorted(list(self.audio_base_path.glob("*.wav")))
+        if not folder_path:
+            print(f"⚠️ Warning: Could not find folder '{folder_name}'")
+            return items
+
+        print(f"📂 Scanning: {folder_path}")
+        files = sorted(list(folder_path.glob("*.wav")))
+        
         for f in files:
             try:
                 parts = f.stem.split('_') 
                 if len(parts) >= 3:
-                    item_id = int(parts[0])
-                    word = parts[1]
-                    tone = parts[2]
+                    tone = parts[-1]
+                    word = parts[-2]
                     
                     if HAS_PYPINYIN:
                         py_list = pinyin(word, style=Style.TONE)
@@ -106,9 +117,15 @@ class ToneIntroductionQuiz:
                     else:
                         pinyin_text = "---"
 
+                    syllable_count = 2 if 'two' in folder_name else 1
+
                     items.append({
-                        "id": item_id, "chinese": word, "pinyin": pinyin_text,
-                        "tone": tone, "audio": f.name
+                        "id": f.name, 
+                        "chinese": word, 
+                        "pinyin": pinyin_text,
+                        "tone": tone, 
+                        "audio_path": f, 
+                        "syllables": syllable_count
                     })
             except ValueError:
                 continue
@@ -119,8 +136,12 @@ class ToneIntroductionQuiz:
         self.ax.axis('off')
         
         self.progress_text = self.ax.text(0.5, 0.35, '', fontsize=12, ha='center', color='#7f8c8d')
-        
-        self.status_text = self.ax.text(0.5, 0.28, 'Click Play to start', fontsize=10, ha='center', color='#7f8c8d')
+        self.status_text = self.ax.text(0.5, 0.22, 'Click Play to start', fontsize=10, ha='center', color='#7f8c8d')
+
+        self.instructions = self.ax.text(0.5, 0.32,
+            "Each audio contains one or two tones. Identify them.\n"
+            "Enter digits (e.g. '1' or '4' for single; '12' or '31' for pairs).",
+            ha='center', va='top', fontsize=9, color='black')
 
         ax_input = plt.axes([0.3, 0.20, 0.4, 0.06])
         self.text_input = TextBox(ax_input, '', color='white', hovercolor='#f9f9f9')
@@ -128,32 +149,21 @@ class ToneIntroductionQuiz:
         self.answer_text = self.ax.text(0.5, 0.14, '', fontsize=14, ha='center', weight='bold', color='#34495e')
         self.feedback_text = self.ax.text(0.5, 0.08, '', fontsize=16, ha='center', weight='bold')
 
-        # Play Button
         self.ax_play = plt.axes([0.35, 0.42, 0.3, 0.07])
         self.btn_play = Button(self.ax_play, 'Play Audio', color='#5B5FED', hovercolor='#4B4FDD')
         self.btn_play.label.set_color('white')
         self.btn_play.on_clicked(self.play_audio)
 
-        # Single Action Button (Check then Next)
         self.ax_action = plt.axes([0.3, 0.02, 0.4, 0.06])
         self.btn_action = Button(self.ax_action, 'Check', color='#3498db', hovercolor='#2980b9')
         self.btn_action.label.set_color('white')
         self.btn_action.on_clicked(self._handle_action)
 
-    def _select_random_item(self):
-        available = [i for i in self.vocab_items if i['id'] not in self.used_words]
-        if not available:
-            self.used_words = set() # Reset if we run out
-            available = self.vocab_items
-            
-        self.current_item = random.choice(available)
-        self.used_words.add(self.current_item['id'])
-        
+    def _update_display(self):
         self.answered = False
         self.timer_started = False
         self.question_start_time = 0
         
-        # Reset Button appearance
         self.btn_action.label.set_text('Check')
         self.btn_action.ax.set_facecolor('#3498db')
         
@@ -166,7 +176,7 @@ class ToneIntroductionQuiz:
         self.fig.canvas.draw_idle()
 
     def play_audio(self, event):
-        if self.is_playing or not self.current_item or self.current_item['audio'] is None: return
+        if self.is_playing or not self.current_item: return
         
         def _thread_run():
             self.is_playing = True
@@ -174,12 +184,11 @@ class ToneIntroductionQuiz:
             self.fig.canvas.draw_idle()
             
             try:
-                fpath = self.audio_base_path / self.current_item['audio']
+                fpath = self.current_item['audio_path']
                 data, sr = sf.read(str(fpath))
                 sd.play(data, sr)
                 sd.wait()
                 
-                # Start Timer AFTER audio finishes
                 self.question_start_time = time.time()
                 self.timer_started = True
                 
@@ -210,25 +219,26 @@ class ToneIntroductionQuiz:
         user_input = self.text_input.text.strip()
         if not user_input: return
 
-        # Stop Timer
         elapsed_time = time.time() - self.question_start_time
-
         correct_tone = str(self.current_item['tone'])
         is_correct = (user_input == correct_tone)
         self.answered = True
 
-        # Store detailed results for the report
+        # --- FIX: Match keys exactly with CSV fieldnames ---
         self.results.append({
-            'word': self.current_item['chinese'],
-            'pinyin': self.current_item['pinyin'],
-            'audio': self.current_item['audio'],
+            'question_idx': self.question_count + 1,
+            'chinese': self.current_item['chinese'],
+            'pinyin': self.current_item['pinyin'],     # Added
+            'syllables': self.current_item['syllables'],
+            'audio': self.current_item['audio_path'].name, # Added
             'correct_tone': correct_tone,
-            'user_input': user_input,
-            'correct': is_correct,
-            'time': elapsed_time
+            'user_answer': user_input,                 # Renamed from user_input
+            'is_correct': is_correct,                  # Renamed from correct
+            'time_seconds': round(elapsed_time, 2),    # Renamed from time
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
+        # ---------------------------------------------------
 
-        # Update button to "Next" state
         self.btn_action.label.set_text('Next Question')
         self.btn_action.ax.set_facecolor('#27ae60')
 
@@ -237,7 +247,7 @@ class ToneIntroductionQuiz:
             self.feedback_text.set_text('CORRECT!')
             self.feedback_text.set_color('#27ae60')
         else:
-            self.feedback_text.set_text(f'Wrong (Correct: Tone {correct_tone})')
+            self.feedback_text.set_text(f'Wrong (Correct: {correct_tone})')
             self.feedback_text.set_color('#e74c3c')
             
         self.status_text.set_text(f"{self.current_item['chinese']} - {self.current_item['pinyin']}")
@@ -247,62 +257,34 @@ class ToneIntroductionQuiz:
     def next_word(self, event):
         self.question_count += 1
         if self.question_count >= self.max_questions:
-            self._save_results()
+            self._save_results_to_file()
             plt.close(self.fig)
-            self._launch_next_script()
         else:
-            self._select_random_item()
+            self.current_item = self.vocab_items[self.question_count]
+            self._update_display()
 
-    def _save_results(self):
-        result_dir = Path(__file__).parent / 'result'
-        result_dir.mkdir(exist_ok=True)
+    def _save_results_to_file(self):
+        filename = "session1_audio_results.csv"
+        filepath = self.script_dir / filename
         
-        ts_str = self.session_start_time.strftime('%Y%m%d_%H%M%S')
-        save_path = result_dir / f"audio_quiz_results_{ts_str}.txt"
+        file_exists = filepath.exists()
         
-        total_score = sum(1 for r in self.results if r['correct'])
-        header_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-        
-        lines = []
-        lines.append("AUDIO TONE QUIZ RESULTS")
-        lines.append("=======================")
-        lines.append(f"Date: {header_date}")
-        lines.append(f"Score: {total_score}/{self.max_questions}\n")
-        
-        for i, res in enumerate(self.results):
-            status = "CORRECT" if res['correct'] else "WRONG"
-            lines.append(f"Q{i+1}: {res['word']} ({res['pinyin']})")
-            lines.append(f"   Audio File: {res['audio']}")
-            lines.append(f"   Correct Tone: {res['correct_tone']} | Your Answer: {res['user_input']}")
-            lines.append(f"   Result: {status}")
-            lines.append(f"   Time: {res['time']:.2f}s")
-            lines.append("-" * 30)
-            
-        with open(save_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        
-        print(f"✅ Report generated: {save_path}")
-
-    def _launch_next_script(self):
-        # Defines the target filename
-        target_file = "tone_recognition_audio_two_syllable.py"
-        current_dir = Path(__file__).parent
-        
-        # 1. Look in the SAME folder
-        next_script = current_dir / target_file
-        
-        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
-        # (This matches the structure implied by your old path)
-        if not next_script.exists():
-            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
-
-        # 3. Launch if found
-        if next_script.exists():
-            print(f"🚀 Launching next script: {next_script}")
-            subprocess.Popen([sys.executable, str(next_script)])
-        else:
-            print(f"⚠️ Could not find next script: {target_file}")
-            print(f"   Checked in: {current_dir}")
+        try:
+            with open(filepath, mode='a', newline='', encoding='utf-8') as file:
+                # --- FIX: Expanded fieldnames to match data ---
+                writer = csv.DictWriter(file, fieldnames=[
+                    'question_idx', 'chinese', 'pinyin', 'syllables', 'audio',
+                    'correct_tone', 'user_answer', 'is_correct', 'time_seconds', 'timestamp'
+                ])
+                
+                if not file_exists:
+                    writer.writeheader()
+                
+                writer.writerows(self.results)
+                
+            print(f"Results appended to {filepath}")
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
 
     def show(self):
         plt.show()

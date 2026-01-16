@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-15 16:17:18.293593
+Score: 3/5
+
+Q1: 车 (chē)
+   Audio File: 03_车_1.wav
+   Correct Tone: 1 | Your Answer: 1
+   Result: CORRECT
+   Time: 9.52s
+------------------------------
+Q2: 天 (tiān)
+   Audio File: 01_天_1.wav
+   Correct Tone: 1 | Your Answer: 1
+   Result: CORRECT
+   Time: 8.02s
+------------------------------
+Q3: 狗 (gǒu)
+   Audio File: 09_狗_3.wav
+   Correct Tone: 3 | Your Answer: 2
+   Result: WRONG
+   Time: 5.66s
+------------------------------
+Q4: 火 (huǒ)
+   Audio File: 08_火_3.wav
+   Correct Tone: 3 | Your Answer: 2
+   Result: WRONG
+   Time: 6.20s
+------------------------------
+Q5: 去 (qù)
+   Audio File: 12_去_4.wav
+   Correct Tone: 4 | Your Answer: 4
+   Result: CORRECT
+   Time: 5.44s
+------------------------------

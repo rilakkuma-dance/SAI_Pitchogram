@@ -9,23 +9,22 @@ import queue
 import wave
 import os
 import random
+import csv
 from datetime import datetime
 import time
 from pathlib import Path
 import librosa 
-import tkinter as tk
 import subprocess
 
-# Try to import pydub for MP3 support
+# Try to import pypinyin
 try:
-    from pydub import AudioSegment
-    PYDUB_AVAILABLE = True
+    from pypinyin import pinyin, Style
+    HAS_PYPINYIN = True
 except ImportError:
-    PYDUB_AVAILABLE = False
+    HAS_PYPINYIN = False
 
 # Configure matplotlib for Chinese characters
 def setup_chinese_font():
-    """Setup matplotlib to display Chinese characters"""
     chinese_fonts = ['SimHei', 'Microsoft YaHei', 'STHeiti', 'Arial Unicode MS']
     available_fonts = [f.name for f in fm.fontManager.ttflist]
     for font_name in chinese_fonts:
@@ -38,21 +37,17 @@ def setup_chinese_font():
 setup_chinese_font()
 
 class SpectrogramProcessor:
-    """Processes audio frames into Mel Spectrograms"""
     def __init__(self, sample_rate=16000, n_fft=512, hop_length=128, n_mels=128):
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.n_mels = n_mels
-        # Frequency range focused on voice (Matches research parameters)
         self.fmin = 50 
         self.fmax = 4000 
 
     def process_chunk(self, audio_chunk):
-        """Used for LIVE scrolling spectrogram (Left side)"""
         if len(audio_chunk) < self.n_fft:
             audio_chunk = np.pad(audio_chunk, (0, self.n_fft - len(audio_chunk)), mode='constant')
-            
         melspec = librosa.feature.melspectrogram(
             y=audio_chunk, sr=self.sample_rate, n_fft=self.n_fft, 
             hop_length=self.hop_length, n_mels=self.n_mels,
@@ -62,13 +57,12 @@ class SpectrogramProcessor:
         return np.mean(melspec_db, axis=1) if melspec_db.shape[1] > 0 else np.zeros(self.n_mels)
 
     def get_full_spectrogram(self, audio_path):
-        """Processes a full file for STATIC display (Right side)"""
         y, sr = librosa.load(str(audio_path), sr=self.sample_rate)
         y, _ = librosa.effects.trim(y, top_db=20) 
-        
         mel_spec = librosa.feature.melspectrogram(
             y=y, sr=sr, n_mels=self.n_mels, 
-            fmin=self.fmin, fmax=self.fmax
+            fmin=self.fmin, fmax=self.fmax,
+            hop_length=self.hop_length # Ensure hop_length matches live processor
         )
         log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
         return log_mel_spec
@@ -80,54 +74,109 @@ class VisualizationHandler:
         self.img = np.full((n_freq_bins, spec_width), -80.0)
 
 class PracticeSet:
-    def __init__(self, audio_base_path="carfac/mandarin_audio_one_syllable"):
-        self.audio_base_path = Path(audio_base_path)
-        self.all_items = [
-            {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "audio": "01_天_1.wav", "type": "word"},
-            {"id": 2,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "audio": "02_心_1.wav", "type": "word"},
-            {"id": 3,  "chinese": "车", "pinyin": "chē",  "tone": "1", "audio": "03_车_1.wav", "type": "word"},
-            {"id": 4,  "chinese": "学", "pinyin": "xué",  "tone": "2", "audio": "04_学_2.wav", "type": "word"},
-            {"id": 5,  "chinese": "人", "pinyin": "rén",  "tone": "2", "audio": "05_人_2.wav", "type": "word"},
-            {"id": 6,  "chinese": "白", "pinyin": "bái",  "tone": "2", "audio": "06_白_2.wav", "type": "word"},
-            {"id": 7,  "chinese": "老", "pinyin": "lǎo",  "tone": "3", "audio": "07_老_3.wav", "type": "word"},
-            {"id": 8,  "chinese": "火", "pinyin": "huǒ",  "tone": "3", "audio": "08_火_3.wav", "type": "word"},
-            {"id": 9,  "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "audio": "09_狗_3.wav", "type": "word"},
-            {"id": 10, "chinese": "叫", "pinyin": "jiào", "tone": "4", "audio": "10_叫_4.wav", "type": "word"},
-            {"id": 11, "chinese": "骂", "pinyin": "mà",   "tone": "4", "audio": "11_骂_4.wav", "type": "word"},
-            {"id": 12, "chinese": "去", "pinyin": "qù",   "tone": "4", "audio": "12_去_4.wav", "type": "word"},
-        ]
+    def __init__(self, script_dir):
+        self.script_dir = script_dir
         self.current_set = []
         self.current_index = 0
-        self.max_questions = 3
+        
+        # 1. Load from both folders
+        self.items_one = self._scan_folder('mandarin_audio_one_syllable')
+        self.items_two = self._scan_folder('mandarin_audio_two_syllable')
+        
+        if not self.items_one and not self.items_two:
+            print("❌ No audio files found in either folder.")
+            sys.exit()
 
-    def generate_new_set(self):
-        self.current_set = random.sample(self.all_items, self.max_questions)
+        # 2. Generate the mixed set (3 + 3)
+        self.generate_mixed_set()
+
+    def _find_folder(self, folder_name):
+        path = self.script_dir / folder_name
+        if path.exists(): return path
+        path = self.script_dir.parent / folder_name
+        if path.exists(): return path
+        return None
+
+    def _scan_folder(self, folder_name):
+        folder_path = self._find_folder(folder_name)
+        items = []
+        if not folder_path: return items
+        
+        syllables = 2 if 'two' in folder_name else 1
+        
+        for f in sorted(folder_path.glob("*.wav")):
+            parts = f.stem.split('_')
+            if len(parts) >= 3:
+                word = parts[-2]
+                tone = parts[-1]
+                
+                if HAS_PYPINYIN:
+                    py_list = pinyin(word, style=Style.TONE)
+                    py = "".join([x[0] for x in py_list])
+                else:
+                    py = "---"
+                
+                items.append({
+                    "id": f.name,
+                    "chinese": word,
+                    "pinyin": py,
+                    "tone": tone,
+                    "audio_path": f,
+                    "syllables": syllables
+                })
+        return items
+
+    def generate_mixed_set(self):
+        selected_one = []
+        selected_two = []
+        
+        if len(self.items_one) >= 3:
+            selected_one = random.sample(self.items_one, 3)
+        else:
+            selected_one = self.items_one
+            
+        if len(self.items_two) >= 3:
+            selected_two = random.sample(self.items_two, 3)
+        else:
+            selected_two = self.items_two
+            
+        self.current_set = selected_one + selected_two
+        random.shuffle(self.current_set)
         self.current_index = 0
-        return self.current_set
+        
+        print(f"✅ Generated set with {len(self.current_set)} items ({len(selected_one)} single, {len(selected_two)} double).")
 
     def get_current_item(self):
-        if not self.current_set: self.generate_new_set()
-        return self.current_set[self.current_index]
+        if self.current_index < len(self.current_set):
+            return self.current_set[self.current_index]
+        return None
 
     def next_item(self):
         self.current_index += 1
-        return self.get_current_item() if self.current_index < self.max_questions else None
+        return self.get_current_item()
+
+    def get_progress_string(self):
+        return f"{self.current_index + 1}/{len(self.current_set)}"
 
 class SimpleAudioVisualizerWithSAI:
-    def __init__(self, chunk_size=512, sample_rate=16000, sai_width=400):
+    def __init__(self, chunk_size=512, sample_rate=16000, sai_width=250): # Reduced width for 2s window
         self.chunk_size, self.sample_rate, self.sai_width = chunk_size, sample_rate, sai_width
         self.audio_queue = queue.Queue(maxsize=50)
         self.running = False
+        self.script_dir = Path(__file__).parent.resolve()
 
-        self.practice_set = PracticeSet()
+        self.practice_set = PracticeSet(self.script_dir)
         self.processor = SpectrogramProcessor(sample_rate=sample_rate)
         self.vis = VisualizationHandler(self.processor.n_mels, sai_width)
         
         self.is_recording = False
         self.recorded_frames = []
         self.reference_audio_playing = False
-        self.save_dir = "recordings"
-        os.makedirs(self.save_dir, exist_ok=True)
+        
+        self.save_dir = self.script_dir / "user_recordings"
+        self.save_dir.mkdir(exist_ok=True)
+        
+        self.results = [] 
 
         self._setup_visualization()
 
@@ -135,17 +184,20 @@ class SimpleAudioVisualizerWithSAI:
         self.fig = plt.figure(figsize=(14, 8))
         gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1.5, 0.5])
 
-        # Left: Live Spectrogram
+        # === LEFT: Live Spectrogram ===
         self.ax_left = self.fig.add_subplot(gs[0, 0])
+        # Fixed extent to match sai_width
         self.im_left = self.ax_left.imshow(self.vis.img, aspect='auto', origin='lower',
-                                         extent=[self.sai_width, 0, 50, 4000], cmap='magma', vmin=-80, vmax=0)
+                                         extent=[0, self.sai_width, 50, 4000], cmap='magma', vmin=-80, vmax=0)
         self.ax_left.set_title("Your Audio (Live)", color='lime')
         self.ax_left.axis('off')
 
-        # Right: Reference Spectrogram
+        # === RIGHT: Reference Spectrogram ===
         self.ax_right = self.fig.add_subplot(gs[0, 1])
-        self.im_right = self.ax_right.imshow(np.full((128, 100), -80.0), aspect='auto', origin='lower',
-                                           extent=[0, 100, 50, 4000], cmap='magma', vmin=-80, vmax=0)
+        # We initialize with a blank fixed-width buffer
+        fixed_ref_buffer = np.full((128, self.sai_width), -80.0)
+        self.im_right = self.ax_right.imshow(fixed_ref_buffer, aspect='auto', origin='lower',
+                                         extent=[0, self.sai_width, 50, 4000], cmap='magma', vmin=-80, vmax=0)
         self.ax_right.set_title("Reference Pattern", color='cyan')
         self.ax_right.axis('off')
 
@@ -190,14 +242,26 @@ class SimpleAudioVisualizerWithSAI:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         item = self.practice_set.get_current_item()
         filename = f"rec_{item['chinese']}_{timestamp}.wav"
-        path = os.path.join(self.save_dir, filename)
+        path = self.save_dir / filename
         
         try:
-            with wave.open(path, 'wb') as wf:
+            with wave.open(str(path), 'wb') as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(self.sample_rate)
                 wf.writeframes(b''.join(self.recorded_frames))
+            
+            # Log Result
+            self.results.append({
+                'item_idx': self.practice_set.current_index + 1,
+                'chinese': item['chinese'],
+                'pinyin': item['pinyin'],
+                'syllables': item['syllables'],
+                'ref_audio': item['audio_path'].name,
+                'user_recording': filename,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
             self.status_text.set_text(f"✓ Saved: {filename}")
             self.status_text.set_color('lime')
         except Exception as e:
@@ -205,42 +269,41 @@ class SimpleAudioVisualizerWithSAI:
 
     def play_reference_audio(self, event=None):
         item = self.practice_set.get_current_item()
-        path = self.practice_set.audio_base_path / item['audio']
+        path = item['audio_path']
         
         if not path.exists():
-            self.status_text.set_text(f"File not found: {item['audio']}")
+            self.status_text.set_text(f"File not found: {path.name}")
             self.fig.canvas.draw_idle()
             return
 
-        # 1. Process and show the Mel-spectrogram on the right
-        # 1. Process and show the Mel-spectrogram on the right
         try:
-            print(f"Generating spectrogram for: {path.name}...")
             full_spec = self.processor.get_full_spectrogram(path)
             
-            # Update Data
-            self.im_right.set_data(full_spec)
+            # === CENTER THE REFERENCE ===
+            # Create a blank buffer matching Live Window Size (self.sai_width)
+            display_buffer = np.full((128, self.sai_width), -80.0)
             
-            # Update Extent (Stretch image to fit the box)
-            # [left, right, bottom, top]
-            self.im_right.set_extent([0, full_spec.shape[1], 50, 4000])
-            
-            # Update Colors (Normalize contrast)
-            self.im_right.set_clim(vmin=np.min(full_spec), vmax=np.max(full_spec))
-            
+            # Calculate centering position
+            spec_w = full_spec.shape[1]
+            if spec_w < self.sai_width:
+                start_col = (self.sai_width - spec_w) // 2
+                display_buffer[:, start_col : start_col + spec_w] = full_spec
+            else:
+                # Crop if too long
+                display_buffer = full_spec[:, :self.sai_width]
+
+            # Update the plot
+            self.im_right.set_data(display_buffer)
+            self.im_right.set_clim(vmin=np.min(display_buffer), vmax=np.max(display_buffer))
             self.ax_right.set_title(f"Reference: {item['chinese']} ({item['pinyin']})", color='cyan')
-            print("Spectrogram updated successfully.")
-            
+            # ============================
+
         except Exception as e:
             print(f"❌ SPECTROGRAM ERROR: {e}")
-            import traceback
-            traceback.print_exc()
 
-        # 2. Play the audio in a background thread
         if not self.reference_audio_playing:
             threading.Thread(target=self._play_wav, args=(path,), daemon=True).start()
         
-        # Refresh the canvas
         self.fig.canvas.draw_idle()
 
     def _play_wav(self, path):
@@ -249,7 +312,6 @@ class SimpleAudioVisualizerWithSAI:
         self.status_text.set_color('cyan')
         try:
             with wave.open(str(path), 'rb') as wf:
-                # Use format/channels/rate from the WAV file for perfect playback
                 stream = self.p.open(
                     format=self.p.get_format_from_width(wf.getsampwidth()),
                     channels=wf.getnchannels(),
@@ -270,18 +332,33 @@ class SimpleAudioVisualizerWithSAI:
     def next_practice_item(self, event=None):
         item = self.practice_set.next_item()
         if item:
-            self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.current_index + 1}/3")
+            self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.get_progress_string()}")
             self.play_reference_audio()
         else:
-            # --- SET COMPLETE LOGIC ---
-            self.status_text.set_text("✓ Set Complete! Loading next...")
+            self.status_text.set_text("✓ Saving CSV...")
             self.status_text.set_color('lime')
-            self.btn_next.set_active(False)
-            self.fig.canvas.draw_idle()
             
-            # Close current window and launch next script
-            plt.close(self.fig) 
+            self._save_results_to_csv()
+            plt.close(self.fig)
             self._launch_next_script()
+
+    def _save_results_to_csv(self):
+        filename = "session1_spectrogram_practice.csv"
+        filepath = self.script_dir / filename
+        file_exists = filepath.exists()
+        
+        try:
+            with open(filepath, mode='a', newline='', encoding='utf-8') as file:
+                writer = csv.DictWriter(file, fieldnames=[
+                    'item_idx', 'chinese', 'pinyin', 'syllables', 
+                    'ref_audio', 'user_recording', 'timestamp'
+                ])
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerows(self.results)
+            print(f"✅ Session log saved to {filepath}")
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
 
     def update_vis(self, frame):
         self.im_left.set_data(self.vis.img)
@@ -298,8 +375,10 @@ class SimpleAudioVisualizerWithSAI:
         while self.running:
             chunk = self.audio_queue.get()
             col = self.processor.process_chunk(chunk)
-            self.vis.img[:, 1:] = self.vis.img[:, :-1]
-            self.vis.img[:, 0] = col
+            
+            # Shift Left, Insert at Right
+            self.vis.img[:, :-1] = self.vis.img[:, 1:]
+            self.vis.img[:, -1] = col
 
     def start(self):
         self.p = pyaudio.PyAudio()
@@ -307,60 +386,27 @@ class SimpleAudioVisualizerWithSAI:
                                 input=True, stream_callback=self.audio_callback)
         self.running = True
         threading.Thread(target=self.process_loop, daemon=True).start()
+        
         item = self.practice_set.get_current_item()
-        self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - 1/3")
+        self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - 1/6")
+        
         self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True)
         plt.show()
 
     def _launch_next_script(self):
-        # Defines the target filename
         target_file = "melspectrogram_only_two_syllable.py"
-        current_dir = Path(__file__).parent
+        next_script = self.script_dir / target_file
         
-        # 1. Look in the SAME folder
-        next_script = current_dir / target_file
-        
-        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
-        # (This matches the structure implied by your old path)
         if not next_script.exists():
-            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
+            next_script = self.script_dir.parent / "session_1_tone_recognition" / target_file
 
-        # 3. Launch if found
         if next_script.exists():
             print(f"🚀 Launching next script: {next_script}")
             subprocess.Popen([sys.executable, str(next_script)])
         else:
             print(f"⚠️ Could not find next script: {target_file}")
-            print(f"   Checked in: {current_dir}")
 
 if __name__ == "__main__":
-    # 1. Determine the folder where THIS script is located
-    script_dir = Path(__file__).parent.resolve()
-    
-    # 2. Look for the audio folder in common locations
-    possible_paths = [
-        script_dir / "mandarin_audio_one_syllable",           # Same folder
-        script_dir / "carfac" / "mandarin_audio_one_syllable", # Subfolder
-        script_dir.parent / "mandarin_audio_one_syllable"      # One folder up
-    ]
-    
-    audio_path = None
-    for p in possible_paths:
-        if p.exists():
-            audio_path = p
-            print(f"✅ Found audio folder at: {audio_path}")
-            break
-            
-    if audio_path is None:
-        print("❌ ERROR: Could not find 'mandarin_audio_one_syllable' folder.")
-        print(f"   Checked locations: {[str(p) for p in possible_paths]}")
-        # Fallback to current dir to prevent crash, though audio won't play
-        audio_path = script_dir 
-
-    # 3. Initialize App
     app = SimpleAudioVisualizerWithSAI()
-    app.practice_set = PracticeSet(audio_base_path=audio_path)
-    try:
-        app.start()
-    finally:
-        app.stop()
+    try: app.start()
+    except KeyboardInterrupt: pass

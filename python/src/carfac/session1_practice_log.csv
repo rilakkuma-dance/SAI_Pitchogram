@@ -1,0 +1,7 @@
+item_idx,chinese,pinyin,syllables,ref_audio,user_recording,timestamp
+1,叫,jiào,1,10_叫_4.wav,rec_叫_20260116_163735.wav,2026-01-16 16:37:35
+2,商店,shāngdiàn,2,02_商店_14.wav,rec_商店_20260116_163745.wav,2026-01-16 16:37:45
+3,车,chē,1,03_车_1.wav,rec_车_20260116_163749.wav,2026-01-16 16:37:49
+4,老师,lǎoshī,2,06_老师_31.wav,SKIPPED,2026-01-16 16:37:50
+5,学,xué,1,04_学_2.wav,SKIPPED,2026-01-16 16:37:51
+6,电脑,diànnǎo,2,10_电脑_43.wav,SKIPPED,2026-01-16 16:37:52

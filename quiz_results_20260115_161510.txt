@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-15 16:15:10.606793
+Score: 0/5
+
+Q1: 中国 (zhōngguó)
+   Audio File: 01_中国_12.wav
+   Correct Tone: 12 | Your Answer: 13
+   Result: WRONG
+   Time: 103.72s
+------------------------------
+Q2: 面包 (miànbāo)
+   Audio File: 08_面包_41.wav
+   Correct Tone: 41 | Your Answer: 31
+   Result: WRONG
+   Time: 6.95s
+------------------------------
+Q3: 商店 (shāngdiàn)
+   Audio File: 02_商店_14.wav
+   Correct Tone: 14 | Your Answer: 13
+   Result: WRONG
+   Time: 10.77s
+------------------------------
+Q4: 学校 (xuéxiào)
+   Audio File: 05_学校_24.wav
+   Correct Tone: 24 | Your Answer: 43
+   Result: WRONG
+   Time: 27.96s
+------------------------------
+Q5: 美国 (měiguó)
+   Audio File: 07_美国_32.wav
+   Correct Tone: 32 | Your Answer: 23
+   Result: WRONG
+   Time: 8.40s
+------------------------------

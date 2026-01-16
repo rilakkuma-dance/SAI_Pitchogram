@@ -1,0 +1,35 @@
+SPECTROGRAM TONE QUIZ RESULTS
+=============================
+Date: 2026-01-16 13:51:32.520484
+Score: 4/5
+
+Q1: 骂 (mà)
+   Audio File: 11_骂_4.wav
+   Correct Tone: 4 | Your Answer: 4
+   Result: CORRECT
+   Time: 10.17s
+------------------------------
+Q2: 狗 (gǒu)
+   Audio File: 09_狗_3.wav
+   Correct Tone: 3 | Your Answer: 3
+   Result: CORRECT
+   Time: 8.10s
+------------------------------
+Q3: 学 (xué)
+   Audio File: 04_学_2.wav
+   Correct Tone: 2 | Your Answer: 2
+   Result: CORRECT
+   Time: 4.72s
+------------------------------
+Q4: 人 (rén)
+   Audio File: 05_人_2.wav
+   Correct Tone: 2 | Your Answer: 2
+   Result: CORRECT
+   Time: 3.39s
+------------------------------
+Q5: 老 (lǎo)
+   Audio File: 07_老_3.wav
+   Correct Tone: 3 | Your Answer: 2
+   Result: WRONG
+   Time: 4.92s
+------------------------------

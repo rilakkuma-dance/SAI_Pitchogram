@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import filedialog
 import sys
 import subprocess
+import csv # Added for CSV support
 
 # Configure matplotlib for Chinese characters
 try:
@@ -25,21 +26,43 @@ class ToneSpectrogramQuiz:
         plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial']
         plt.rcParams['axes.unicode_minus'] = False 
         
-        self.audio_base_path = self._find_audio_folder()
-        if not self.audio_base_path:
+        self.script_dir = Path(__file__).parent.resolve()
+        
+        # 1. LOAD ITEMS FROM BOTH FOLDERS
+        items_one = self._load_from_folder('mandarin_audio_one_syllable')
+        items_two = self._load_from_folder('mandarin_audio_two_syllable')
+
+        if not items_one and not items_two:
+            print("❌ No audio folders found. Exiting.")
             sys.exit()
 
-        self.vocab_items = self._scan_audio_folder()
+        # 2. SELECT 3 FROM EACH (Total 6)
+        selected_one = []
+        selected_two = []
+
+        if len(items_one) >= 3:
+            selected_one = random.sample(items_one, 3)
+        else:
+            selected_one = items_one 
+            
+        if len(items_two) >= 3:
+            selected_two = random.sample(items_two, 3)
+        else:
+            selected_two = items_two 
+            
+        self.vocab_items = selected_one + selected_two
+        random.shuffle(self.vocab_items)
         
+        print(f"✅ Loaded {len(self.vocab_items)} questions ({len(selected_one)} from 1-syllable, {len(selected_two)} from 2-syllable).")
+
         # Game State
         self.current_item = None
         self.current_audio_y = None
         self.current_audio_sr = None
         self.answered = False
         self.question_count = 0
-        self.max_questions = 5
+        self.max_questions = len(self.vocab_items) # Should be 6
         self.spectrogram_shown = False
-        self.used_words = set()
         self.results = []
         self.session_start_time = datetime.now()
         
@@ -51,42 +74,58 @@ class ToneSpectrogramQuiz:
         self.fig.patch.set_facecolor('white')
         self._setup_interface()
         
-        self._select_random_item()
+        if self.vocab_items:
+            self.current_item = self.vocab_items[0]
+            self._update_display()
+        else:
+            print("Error: No vocab items loaded.")
 
-    def _find_audio_folder(self):
-        script_dir = Path(__file__).parent.resolve()
-        paths = [script_dir / 'mandarin_audio_one_syllable', script_dir.parent / 'mandarin_audio_one_syllable']
-        for p in paths:
-            if p.exists(): return p
-        
-        root = tk.Tk(); root.withdraw()
-        folder = filedialog.askdirectory(title="Select audio folder")
-        root.destroy()
-        return Path(folder) if folder else None
+    def _find_folder(self, folder_name):
+        # Check current dir
+        path = self.script_dir / folder_name
+        if path.exists(): return path
+        # Check parent dir
+        path = self.script_dir.parent / folder_name
+        if path.exists(): return path
+        return None
 
-    def _scan_audio_folder(self):
+    def _load_from_folder(self, folder_name):
+        folder_path = self._find_folder(folder_name)
         items = []
-        if not self.audio_base_path or not self.audio_base_path.exists():
+        
+        if not folder_path:
+            print(f"⚠️ Warning: Could not find folder '{folder_name}'")
             return items
-            
-        for f in self.audio_base_path.glob("*.wav"):
-            parts = f.stem.split('_') 
-            if len(parts) >= 3:
-                # Handle pinyin generation safely
-                if HAS_PYPINYIN:
-                    # Generate pinyin with tone marks (e.g., měiguó)
-                    py_list = pinyin(parts[1], style=Style.TONE)
-                    py = "".join([x[0] for x in py_list])
-                else:
-                    py = "---"
-                
-                items.append({
-                    "id": int(parts[0]), 
-                    "chinese": parts[1], 
-                    "pinyin": py, 
-                    "tone": parts[2], 
-                    "audio": f.name
-                })
+
+        print(f"📂 Scanning: {folder_path}")
+        files = sorted(list(folder_path.glob("*.wav")))
+        
+        for f in files:
+            try:
+                parts = f.stem.split('_') 
+                if len(parts) >= 3:
+                    # Assumes format: ID_Word_Tone.wav
+                    tone = parts[-1]
+                    word = parts[-2]
+                    
+                    if HAS_PYPINYIN:
+                        py_list = pinyin(word, style=Style.TONE)
+                        pinyin_text = "".join([x[0] for x in py_list])
+                    else:
+                        pinyin_text = "---"
+
+                    syllable_count = 2 if 'two' in folder_name else 1
+
+                    items.append({
+                        "id": f.name, 
+                        "chinese": word, 
+                        "pinyin": pinyin_text,
+                        "tone": tone, 
+                        "audio_path": f, # Store full path
+                        "syllables": syllable_count
+                    })
+            except ValueError:
+                continue
         return items
 
     def _setup_interface(self):
@@ -115,15 +154,7 @@ class ToneSpectrogramQuiz:
         self.btn_action.label.set_color('white')
         self.btn_action.on_clicked(self._handle_button_click)
 
-    def _select_random_item(self):
-        available = [i for i in self.vocab_items if i['id'] not in self.used_words]
-        if not available:
-            self.current_item = random.choice(self.vocab_items)
-        else:
-            self.current_item = random.choice(available)
-            
-        self.used_words.add(self.current_item['id'])
-        
+    def _update_display(self):
         # Reset State
         self.answered = False
         self.spectrogram_shown = False
@@ -144,7 +175,7 @@ class ToneSpectrogramQuiz:
         self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
         
         self.fig.canvas.draw_idle()
-        
+
     def _handle_button_click(self, event):
         if not self.spectrogram_shown:
             self._show_spectrogram()
@@ -154,7 +185,7 @@ class ToneSpectrogramQuiz:
             self._next_word()
 
     def _show_spectrogram(self):
-        fpath = self.audio_base_path / self.current_item['audio']
+        fpath = self.current_item['audio_path']
         self.current_audio_y, self.current_audio_sr = librosa.load(str(fpath), sr=None)
         
         mel_spec = librosa.feature.melspectrogram(y=self.current_audio_y, sr=self.current_audio_sr, n_mels=128, fmin=50, fmax=4000)
@@ -182,15 +213,18 @@ class ToneSpectrogramQuiz:
         is_correct = (user_input == correct_tone)
         self.answered = True
 
-        # Store rich results for the report
+        # Store detailed results (Matching CSV columns)
         self.results.append({
-            'word': self.current_item['chinese'],
+            'question_idx': self.question_count + 1,
+            'chinese': self.current_item['chinese'],
             'pinyin': self.current_item['pinyin'],
-            'audio': self.current_item['audio'],
+            'syllables': self.current_item['syllables'],
+            'audio': self.current_item['audio_path'].name,
             'correct_tone': correct_tone,
-            'user_input': user_input,
-            'correct': is_correct,
-            'time': elapsed_time
+            'user_answer': user_input,
+            'is_correct': is_correct,
+            'time_seconds': round(elapsed_time, 2),
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
 
         self.answer_text.set_text(f"Correct Tone: {correct_tone} | Your Ans: {user_input}")
@@ -214,61 +248,36 @@ class ToneSpectrogramQuiz:
         self.question_count += 1
         if self.question_count >= self.max_questions:
             # End of quiz - Save and Close
-            self._save_results()
+            self._save_results_to_file()
             plt.close(self.fig)
-            print("Quiz Complete! Results saved to file.")
-            self._launch_next_script()
         else:
-            self._select_random_item()
+            self.current_item = self.vocab_items[self.question_count]
+            self._update_display()
 
-    def _save_results(self):
-        # Generate filename with timestamp
-        ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"quiz_results_{ts_str}.txt"
+    def _save_results_to_file(self):
+        # 1. Use a fixed filename
+        filename = "session1_mel_results.csv"
+        filepath = self.script_dir / filename
         
-        total_score = sum(1 for r in self.results if r['correct'])
-        header_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        # 2. Check if file exists so we only write headers once
+        file_exists = filepath.exists()
         
-        lines = []
-        lines.append("SPECTROGRAM TONE QUIZ RESULTS")
-        lines.append("=============================")
-        lines.append(f"Date: {header_date}")
-        lines.append(f"Score: {total_score}/{self.max_questions}\n")
-        
-        for i, res in enumerate(self.results):
-            status = "CORRECT" if res['correct'] else "WRONG"
-            lines.append(f"Q{i+1}: {res['word']} ({res['pinyin']})")
-            lines.append(f"   Audio File: {res['audio']}")
-            lines.append(f"   Correct Tone: {res['correct_tone']} | Your Answer: {res['user_input']}")
-            lines.append(f"   Result: {status}")
-            lines.append(f"   Time: {res['time']:.2f}s")
-            lines.append("-" * 30)
-            
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        
-        print(f"\nReport generated: {filename}")
-
-    def _launch_next_script(self):
-        # Defines the target filename
-        target_file = "tone_recognition_melspectrogram_two_syllable.py"
-        current_dir = Path(__file__).parent
-        
-        # 1. Look in the SAME folder
-        next_script = current_dir / target_file
-        
-        # 2. If not found, look in the specific sibling folder "session_1_tone_recognition"
-        # (This matches the structure implied by your old path)
-        if not next_script.exists():
-            next_script = current_dir.parent / "session_1_tone_recognition" / target_file
-
-        # 3. Launch if found
-        if next_script.exists():
-            print(f"🚀 Launching next script: {next_script}")
-            subprocess.Popen([sys.executable, str(next_script)])
-        else:
-            print(f"⚠️ Could not find next script: {target_file}")
-            print(f"   Checked in: {current_dir}")
+        try:
+            with open(filepath, mode='a', newline='', encoding='utf-8') as file:
+                writer = csv.DictWriter(file, fieldnames=[
+                    'question_idx', 'chinese', 'pinyin', 'syllables', 'audio',
+                    'correct_tone', 'user_answer', 'is_correct', 'time_seconds', 'timestamp'
+                ])
+                
+                # Only write the top header row if the file is brand new
+                if not file_exists:
+                    writer.writeheader()
+                
+                writer.writerows(self.results)
+                
+            print(f"Results appended to {filepath}")
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
 
     def show(self):
         plt.show()
