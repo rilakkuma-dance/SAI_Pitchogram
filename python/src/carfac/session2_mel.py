@@ -1,20 +1,27 @@
 import sys
 import numpy as np
-import pyaudio
+import sounddevice as sd
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib.font_manager as fm
 import threading
 import queue
 import wave
-import os
-import random
 import csv
+import random
 from datetime import datetime
-import time
 from pathlib import Path
-import librosa 
-import subprocess
+import librosa
+
+# --- Configuration (Optimized for Tones) ---
+FS = 22050          
+N_MELS = 128        
+FMIN = 50           
+FMAX = 1500         
+DISPLAY_TIME = 3    
+N_FFT = 2048
+HOP_LENGTH = 512
+NUM_FRAMES = int(DISPLAY_TIME * FS / HOP_LENGTH)
 
 # Try to import pypinyin
 try:
@@ -23,7 +30,6 @@ try:
 except ImportError:
     HAS_PYPINYIN = False
 
-# Configure matplotlib for Chinese characters
 def setup_chinese_font():
     chinese_fonts = ['SimHei', 'Microsoft YaHei', 'STHeiti', 'Arial Unicode MS']
     available_fonts = [f.name for f in fm.fontManager.ttflist]
@@ -36,363 +42,224 @@ def setup_chinese_font():
 
 setup_chinese_font()
 
-class SpectrogramProcessor:
-    def __init__(self, sample_rate=16000, n_fft=512, hop_length=128, n_mels=128):
-        self.sample_rate = sample_rate
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        self.n_mels = n_mels
-        self.fmin = 50 
-        self.fmax = 4000 
-
-    def process_chunk(self, audio_chunk):
-        if len(audio_chunk) < self.n_fft:
-            audio_chunk = np.pad(audio_chunk, (0, self.n_fft - len(audio_chunk)), mode='constant')
-        melspec = librosa.feature.melspectrogram(
-            y=audio_chunk, sr=self.sample_rate, n_fft=self.n_fft, 
-            hop_length=self.hop_length, n_mels=self.n_mels,
-            fmin=self.fmin, fmax=self.fmax
-        )
-        melspec_db = librosa.power_to_db(melspec, ref=np.max)
-        return np.mean(melspec_db, axis=1) if melspec_db.shape[1] > 0 else np.zeros(self.n_mels)
-
-    def get_full_spectrogram(self, audio_path):
-        y, sr = librosa.load(str(audio_path), sr=self.sample_rate)
-        y, _ = librosa.effects.trim(y, top_db=20) 
-        mel_spec = librosa.feature.melspectrogram(
-            y=y, sr=sr, n_mels=self.n_mels, 
-            fmin=self.fmin, fmax=self.fmax,
-            hop_length=self.hop_length # Ensure hop_length matches live processor
-        )
-        log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
-        return log_mel_spec
-
-class VisualizationHandler:
-    def __init__(self, n_freq_bins, spec_width):
-        self.n_freq_bins = n_freq_bins
-        self.spec_width = spec_width
-        self.img = np.full((n_freq_bins, spec_width), -80.0)
-
 class PracticeSet:
     def __init__(self, script_dir):
         self.script_dir = script_dir
         self.current_set = []
         self.current_index = 0
-        
-        # 1. Load from both folders
         self.items_one = self._scan_folder('mandarin_audio_one_syllable')
         self.items_two = self._scan_folder('mandarin_audio_two_syllable')
         
         if not self.items_one and not self.items_two:
-            print("❌ No audio files found in either folder.")
+            print("❌ No audio files found.")
             sys.exit()
-
-        # 2. Generate the mixed set (3 + 3)
         self.generate_mixed_set()
 
     def _find_folder(self, folder_name):
-        path = self.script_dir / folder_name
-        if path.exists(): return path
-        path = self.script_dir.parent / folder_name
-        if path.exists(): return path
+        paths = [self.script_dir / folder_name, self.script_dir.parent / folder_name]
+        for p in paths:
+            if p.exists(): return p
         return None
 
     def _scan_folder(self, folder_name):
         folder_path = self._find_folder(folder_name)
         items = []
         if not folder_path: return items
-        
         syllables = 2 if 'two' in folder_name else 1
-        
         for f in sorted(folder_path.glob("*.wav")):
             parts = f.stem.split('_')
             if len(parts) >= 3:
                 word = parts[-2]
-                tone = parts[-1]
-                
-                if HAS_PYPINYIN:
-                    py_list = pinyin(word, style=Style.TONE)
-                    py = "".join([x[0] for x in py_list])
-                else:
-                    py = "---"
-                
-                items.append({
-                    "id": f.name,
-                    "chinese": word,
-                    "pinyin": py,
-                    "tone": tone,
-                    "audio_path": f,
-                    "syllables": syllables
-                })
+                py = "".join([x[0] for x in pinyin(word, style=Style.TONE)]) if HAS_PYPINYIN else "---"
+                items.append({"id": f.name, "chinese": word, "pinyin": py, "audio_path": f, "syllables": syllables})
         return items
 
     def generate_mixed_set(self):
-        selected_one = []
-        selected_two = []
-        
-        if len(self.items_one) >= 3:
-            selected_one = random.sample(self.items_one, 3)
-        else:
-            selected_one = self.items_one
-            
-        if len(self.items_two) >= 3:
-            selected_two = random.sample(self.items_two, 3)
-        else:
-            selected_two = self.items_two
-            
-        self.current_set = selected_one + selected_two
+        s1 = random.sample(self.items_one, min(3, len(self.items_one)))
+        s2 = random.sample(self.items_two, min(3, len(self.items_two)))
+        self.current_set = s1 + s2
         random.shuffle(self.current_set)
         self.current_index = 0
-        
-        print(f"✅ Generated set with {len(self.current_set)} items ({len(selected_one)} single, {len(selected_two)} double).")
 
     def get_current_item(self):
-        if self.current_index < len(self.current_set):
-            return self.current_set[self.current_index]
-        return None
+        return self.current_set[self.current_index] if self.current_index < len(self.current_set) else None
 
     def next_item(self):
         self.current_index += 1
         return self.get_current_item()
 
-    def get_progress_string(self):
-        return f"{self.current_index + 1}/{len(self.current_set)}"
-
-class SimpleAudioVisualizerWithSAI:
-    def __init__(self, chunk_size=512, sample_rate=16000, sai_width=250): # Reduced width for 2s window
-        self.chunk_size, self.sample_rate, self.sai_width = chunk_size, sample_rate, sai_width
-        self.audio_queue = queue.Queue(maxsize=50)
-        self.running = False
+class TonePracticeApp:
+    def __init__(self):
         self.script_dir = Path(__file__).parent.resolve()
-
         self.practice_set = PracticeSet(self.script_dir)
-        self.processor = SpectrogramProcessor(sample_rate=sample_rate)
-        self.vis = VisualizationHandler(self.processor.n_mels, sai_width)
-        
+        self.audio_queue = queue.Queue()
+        self.mel_buffer = np.full((N_MELS, NUM_FRAMES), -80.0)
         self.is_recording = False
         self.recorded_frames = []
-        self.reference_audio_playing = False
+        self.results = []
         
-        self.save_dir = self.script_dir / "mel_recording"
+        self.save_dir = self.script_dir / "mel_recordings"
         self.save_dir.mkdir(exist_ok=True)
-        
-        self.results = [] 
 
-        self._setup_visualization()
+        self._setup_ui()
 
-    def _setup_visualization(self):
-        self.fig = plt.figure(figsize=(14, 8))
-        gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1.5, 0.5])
+    def _setup_ui(self):
+        self.fig = plt.figure(figsize=(12, 7), facecolor='#121212')
+        gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1, 0.5])
 
-        # === LEFT: Live Spectrogram ===
+        # Left: Live Spectrogram
         self.ax_left = self.fig.add_subplot(gs[0, 0])
-        # Fixed extent to match sai_width
-        self.im_left = self.ax_left.imshow(self.vis.img, aspect='auto', origin='lower',
-                                         extent=[0, self.sai_width, 50, 4000], cmap='magma', vmin=-80, vmax=0)
-        self.ax_left.set_title("Your Audio (Live)", color='lime')
-        self.ax_left.axis('off')
+        self.im_left = self.ax_left.imshow(self.mel_buffer, aspect='auto', origin='lower',
+                                          cmap='magma', extent=[0, DISPLAY_TIME, FMIN, FMAX], vmin=-70, vmax=0)
+        self.ax_left.set_title("Your Voice (Live)", color='lime')
+        self.ax_left.tick_params(colors='white')
 
-        # === RIGHT: Reference Spectrogram ===
+        # Right: Reference
         self.ax_right = self.fig.add_subplot(gs[0, 1])
-        # We initialize with a blank fixed-width buffer
-        fixed_ref_buffer = np.full((128, self.sai_width), -80.0)
-        self.im_right = self.ax_right.imshow(fixed_ref_buffer, aspect='auto', origin='lower',
-                                         extent=[0, self.sai_width, 50, 4000], cmap='magma', vmin=-80, vmax=0)
+        # Initialize with same VMIN/VMAX as live view
+        self.im_right = self.ax_right.imshow(np.full((N_MELS, NUM_FRAMES), -80.0), aspect='auto', 
+                                            origin='lower', cmap='magma', extent=[0, DISPLAY_TIME, FMIN, FMAX],
+                                            vmin=-70, vmax=0)
         self.ax_right.set_title("Reference Pattern", color='cyan')
         self.ax_right.axis('off')
 
-        self.ax_text = self.fig.add_subplot(gs[1, :])
+        # Text Area
+        self.ax_text = self.fig.add_subplot(gs[1, :], facecolor='none')
         self.ax_text.axis('off')
-        self.practice_info = self.ax_text.text(0.5, 0.6, "", ha='center', fontsize=16, color='white', weight='bold')
-        self.status_text = self.ax_text.text(0.5, 0.2, "Ready", ha='center', color='yellow')
+        self.practice_info = self.ax_text.text(0.5, 0.7, "", ha='center', fontsize=16, color='white', weight='bold')
+        self.status_text = self.ax_text.text(0.5, 0.1, "Ready", ha='center', color='yellow')
 
         # Buttons
         from matplotlib.widgets import Button
-        self.btn_play = Button(plt.axes([0.25, 0.05, 0.15, 0.04]), 'Play Reference', color='cyan')
-        self.btn_play.on_clicked(self.play_reference_audio)
+        self.btn_play = Button(plt.axes([0.2, 0.05, 0.15, 0.05]), 'Play Reference', color='#2c2c2c', hovercolor='#3d3d3d')
+        self.btn_play.label.set_color('cyan')
+        self.btn_play.on_clicked(self.play_reference)
 
-        self.btn_rec = Button(plt.axes([0.42, 0.05, 0.18, 0.04]), 'Start Recording', color='lime')
+        self.btn_rec = Button(plt.axes([0.4, 0.05, 0.2, 0.05]), 'Start Recording', color='#2c2c2c', hovercolor='#3d3d3d')
+        self.btn_rec.label.set_color('lime')
         self.btn_rec.on_clicked(self.toggle_recording)
 
-        self.btn_next = Button(plt.axes([0.62, 0.05, 0.15, 0.04]), 'Next Item', color='orange')
-        self.btn_next.on_clicked(self.next_practice_item)
+        self.btn_next = Button(plt.axes([0.65, 0.05, 0.15, 0.05]), 'Next Item', color='#2c2c2c', hovercolor='#3d3d3d')
+        self.btn_next.label.set_color('orange')
+        self.btn_next.on_clicked(self.next_item)
 
-        self.fig.patch.set_facecolor('#121212')
+    def _audio_callback(self, indata, frames, time, status):
+        self.audio_queue.put(indata.copy())
+        if self.is_recording:
+            self.recorded_frames.append(indata.copy())
+
+    def update_plot(self, frame):
+        while not self.audio_queue.empty():
+            data = self.audio_queue.get().flatten()
+            
+            mel_spec = librosa.feature.melspectrogram(
+                y=data, sr=FS, n_fft=N_FFT, hop_length=HOP_LENGTH, 
+                n_mels=N_MELS, fmin=FMIN, fmax=FMAX
+            )
+            # Power to DB
+            log_mel = librosa.power_to_db(mel_spec, ref=np.max)
+            
+            new_frames = log_mel.shape[1]
+            if new_frames > NUM_FRAMES:
+                log_mel = log_mel[:, -NUM_FRAMES:]
+                new_frames = NUM_FRAMES
+
+            self.mel_buffer = np.roll(self.mel_buffer, -new_frames, axis=1)
+            self.mel_buffer[:, -new_frames:] = log_mel
+            self.im_left.set_array(self.mel_buffer)
+            
+        return [self.im_left]
 
     def toggle_recording(self, event=None):
         if not self.is_recording:
-            self.recorded_frames = [] 
+            self.recorded_frames = []
             self.is_recording = True
             self.btn_rec.label.set_text("Stop & Save")
-            self.ax_left.set_title("Recording...", color='red')
-            self.status_text.set_text("● RECORDING IN PROGRESS...")
+            self.status_text.set_text("● RECORDING...")
             self.status_text.set_color('red')
         else:
             self.is_recording = False
             self.btn_rec.label.set_text("Start Recording")
-            self.ax_left.set_title("Your Audio (Live)", color='lime')
-            self.save_recorded_audio()
-        self.fig.canvas.draw_idle()
+            self.save_audio()
 
-    def save_recorded_audio(self):
-        if not self.recorded_frames:
-            self.status_text.set_text("No audio captured.")
-            return
-            
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    def save_audio(self):
+        if not self.recorded_frames: return
         item = self.practice_set.get_current_item()
-        filename = f"rec_{item['chinese']}_{timestamp}.wav"
+        ts = datetime.now().strftime('%H%M%S')
+        filename = f"rec_{item['chinese']}_{ts}.wav"
         path = self.save_dir / filename
         
-        try:
-            with wave.open(str(path), 'wb') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(self.sample_rate)
-                wf.writeframes(b''.join(self.recorded_frames))
+        audio_data = np.concatenate(self.recorded_frames)
+        audio_int = (audio_data * 32767).astype(np.int16)
+        
+        with wave.open(str(path), 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(FS)
+            wf.writeframes(audio_int.tobytes())
             
-            # Log Result
-            self.results.append({
-                'item_idx': self.practice_set.current_index + 1,
-                'chinese': item['chinese'],
-                'pinyin': item['pinyin'],
-                'syllables': item['syllables'],
-                'ref_audio': item['audio_path'].name,
-                'mel_recording': filename,
-                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            })
-            
-            self.status_text.set_text(f"✓ Saved: {filename}")
-            self.status_text.set_color('lime')
-        except Exception as e:
-            self.status_text.set_text(f"Error: {str(e)}")
+        self.results.append({'chinese': item['chinese'], 'file': filename, 'time': datetime.now().isoformat()})
+        self.status_text.set_text(f"✓ Saved {filename}")
+        self.status_text.set_color('lime')
 
-    def play_reference_audio(self, event=None):
+    def play_reference(self, event=None):
         item = self.practice_set.get_current_item()
-        path = item['audio_path']
+        y, sr = librosa.load(item['audio_path'], sr=FS)
         
-        if not path.exists():
-            self.status_text.set_text(f"File not found: {path.name}")
-            self.fig.canvas.draw_idle()
-            return
-
-        try:
-            full_spec = self.processor.get_full_spectrogram(path)
-            
-            # === CENTER THE REFERENCE ===
-            # Create a blank buffer matching Live Window Size (self.sai_width)
-            display_buffer = np.full((128, self.sai_width), -80.0)
-            
-            # Calculate centering position
-            spec_w = full_spec.shape[1]
-            if spec_w < self.sai_width:
-                start_col = (self.sai_width - spec_w) // 2
-                display_buffer[:, start_col : start_col + spec_w] = full_spec
-            else:
-                # Crop if too long
-                display_buffer = full_spec[:, :self.sai_width]
-
-            # Update the plot
-            self.im_right.set_data(display_buffer)
-            self.im_right.set_clim(vmin=np.min(display_buffer), vmax=np.max(display_buffer))
-            self.ax_right.set_title(f"Reference: {item['chinese']} ({item['pinyin']})", color='cyan')
-            # ============================
-
-        except Exception as e:
-            print(f"❌ SPECTROGRAM ERROR: {e}")
-
-        if not self.reference_audio_playing:
-            threading.Thread(target=self._play_wav, args=(path,), daemon=True).start()
+        # Calculate Reference Spectrogram
+        ref_mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH, 
+                                                n_mels=N_MELS, fmin=FMIN, fmax=FMAX)
+        # Use a fixed reference for db conversion to ensure visibility
+        ref_db = librosa.power_to_db(ref_mel, ref=np.max)
         
+        # Center the reference in the 3s window
+        ref_display = np.full((N_MELS, NUM_FRAMES), -80.0)
+        w = ref_db.shape[1]
+        if w < NUM_FRAMES:
+            start = (NUM_FRAMES - w) // 2
+            ref_display[:, start:start+w] = ref_db
+        else:
+            ref_display = ref_db[:, :NUM_FRAMES]
+        
+        # UPDATE IMAGE DATA
+        self.im_right.set_array(ref_display)
+        self.ax_right.set_title(f"Ref: {item['chinese']} ({item['pinyin']})", color='cyan')
+        
+        # Explicitly redraw the reference plot
         self.fig.canvas.draw_idle()
+        
+        # Play audio
+        threading.Thread(target=lambda: sd.play(y, sr), daemon=True).start()
 
-    def _play_wav(self, path):
-        self.reference_audio_playing = True
-        self.status_text.set_text(f"🔊 Playing: {path.name}")
-        self.status_text.set_color('cyan')
-        try:
-            with wave.open(str(path), 'rb') as wf:
-                stream = self.p.open(
-                    format=self.p.get_format_from_width(wf.getsampwidth()),
-                    channels=wf.getnchannels(),
-                    rate=wf.getframerate(),
-                    output=True
-                )
-                data = wf.readframes(self.chunk_size)
-                while data and self.running:
-                    stream.write(data)
-                    data = wf.readframes(self.chunk_size)
-                stream.close()
-        finally:
-            self.reference_audio_playing = False
+    def next_item(self, event=None):
+        item = self.practice_set.next_item()
+        if item:
+            self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.current_index+1}/6")
+            # Clear reference view for next item
+            self.im_right.set_array(np.full((N_MELS, NUM_FRAMES), -80.0))
             self.status_text.set_text("Ready")
             self.status_text.set_color('yellow')
             self.fig.canvas.draw_idle()
-
-    def next_practice_item(self, event=None):
-        item = self.practice_set.next_item()
-        if item:
-            self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - {self.practice_set.get_progress_string()}")
-            self.play_reference_audio()
         else:
-            self.status_text.set_text("✓ Saving CSV...")
-            self.status_text.set_color('lime')
-            
-            self._save_results_to_csv()
-            plt.close(self.fig)
+            self.finish_session()
 
-    def _save_results_to_csv(self):
-        filename = "session2_mel_results.csv"
-        filepath = self.script_dir / filename
-        file_exists = filepath.exists()
-        
-        try:
-            with open(filepath, mode='a', newline='', encoding='utf-8') as file:
-                writer = csv.DictWriter(file, fieldnames=[
-                    'item_idx', 'chinese', 'pinyin', 'syllables', 
-                    'ref_audio', 'mel_recording', 'timestamp'
-                ])
-                if not file_exists:
-                    writer.writeheader()
-                writer.writerows(self.results)
-            print(f"✅ Session log saved to {filepath}")
-        except Exception as e:
-            print(f"Error saving CSV: {e}")
-
-    def update_vis(self, frame):
-        self.im_left.set_data(self.vis.img)
-        return [self.im_left]
-
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        audio_float = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
-        if self.is_recording: 
-            self.recorded_frames.append(in_data)
-        self.audio_queue.put(audio_float)
-        return (None, pyaudio.paContinue)
-
-    def process_loop(self):
-        while self.running:
-            chunk = self.audio_queue.get()
-            col = self.processor.process_chunk(chunk)
-            
-            # Shift Left, Insert at Right
-            self.vis.img[:, :-1] = self.vis.img[:, 1:]
-            self.vis.img[:, -1] = col
+    def finish_session(self):
+        csv_path = self.script_dir / 'session_results.csv'
+        file_exists = csv_path.exists()
+        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['chinese', 'file', 'time'])
+            if not file_exists: writer.writeheader()
+            writer.writerows(self.results)
+        plt.close()
 
     def start(self):
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=pyaudio.paInt16, channels=1, rate=self.sample_rate,
-                                input=True, stream_callback=self.audio_callback)
-        self.running = True
-        threading.Thread(target=self.process_loop, daemon=True).start()
-        
         item = self.practice_set.get_current_item()
         self.practice_info.set_text(f"{item['chinese']} ({item['pinyin']}) - 1/6")
         
-        self.ani = animation.FuncAnimation(self.fig, self.update_vis, interval=30, blit=True)
-        plt.show()
+        with sd.InputStream(samplerate=FS, channels=1, callback=self._audio_callback):
+            self.ani = animation.FuncAnimation(self.fig, self.update_plot, interval=30, blit=True, cache_frame_data=False)
+            plt.show()
 
 if __name__ == "__main__":
-    app = SimpleAudioVisualizerWithSAI()
-    try: app.start()
-    except KeyboardInterrupt: pass
+    app = TonePracticeApp()
+    app.start()
