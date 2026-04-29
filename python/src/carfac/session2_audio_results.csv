@@ -1,0 +1,8 @@
+item_idx,chinese,pinyin,syllables,ref_audio,audio_recording,timestamp
+1,商店,shāngdiàn,2,02_商店_14.wav,rec_商店_20260129_151704.wav,2026-01-29 15:17:04
+1,商店,shāngdiàn,2,02_商店_14.wav,rec_商店_20260129_151731.wav,2026-01-29 15:17:31
+2,老,lǎo,1,07_老_3.wav,SKIPPED,2026-01-29 15:25:34
+3,人,rén,1,05_人_2.wav,SKIPPED,2026-01-29 15:25:35
+4,美国,měiguó,2,07_美国_32.wav,SKIPPED,2026-01-29 15:25:35
+5,中国,zhōngguó,2,01_中国_12.wav,SKIPPED,2026-01-29 15:25:35
+6,心,xīn,1,02_心_1.wav,SKIPPED,2026-01-29 15:25:35
