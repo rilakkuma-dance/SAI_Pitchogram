@@ -13,6 +13,10 @@ import subprocess
 import csv 
 from datetime import datetime
 
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Times New Roman']
+plt.rcParams['mathtext.fontset'] = 'stix'  # 数式フォントもTimes系に合わせる
+
 # ==========================================
 # IMPORT THE NEW CONFIGURATION HELPER
 # ==========================================
@@ -60,6 +64,7 @@ class AudioProcessor:
         else:
             self.use_carfac = False
             self.n_channels = 200
+        print(f"Total Channels: {self.n_channels}")
 
     def process_chunk(self, audio_chunk):
         if self.use_carfac:
@@ -132,10 +137,10 @@ class ToneIntroductionQuizMixed:
     def __init__(self):
         self.script_dir = Path(__file__).parent.resolve()
         self.sample_rate = 16000
-        self.chunk_size = 512
+        self.chunk_size = 450
         
         # 1. Setup Folders
-        self.folder_one = self._find_folder('mandarin_audio_one_syllable')
+        self.folder_one = self._find_folder('mandarin_audio_two_syllable')
         self.folder_two = self._find_folder('mandarin_audio_two_syllable')
         
         # 2. Load Vocab (3 from One-Syllable, 3 from Two-Syllable)
@@ -236,15 +241,14 @@ class ToneIntroductionQuizMixed:
         self.ax_ui.axis('off')
 
         self.ax_sai = self.fig.add_axes([0.12, 0.58, 0.76, 0.32])
+        self.ax_sai.axis('off')
+        
         self.im_sai = self.ax_sai.imshow(
             self.rgb_img,
-            aspect='auto', origin='upper', extent=[0, 400, 0, self.processor.n_channels]
+            aspect='auto', origin='upper', extent=[0, 11.25,self.processor.n_channels, 0]
         )
-        self.ax_sai.set_facecolor('black')
-        self.ax_sai.tick_params(colors='#666666', labelsize=8)
-
         # 1. Progress
-        self.progress_text = self.ax_ui.text(0.5, 0.50, 'Question 1/6', 
+        self.progress_text = self.ax_ui.text(0.5, 0.50, '', 
                                              ha='center', fontsize=12, color='#7f8c8d')
         
         # 2. Status
@@ -403,7 +407,7 @@ class ToneIntroductionQuizMixed:
         self._update_progress()
 
     def _update_progress(self):
-        self.progress_text.set_text(f"Question {self.question_count + 1}/{self.max_questions}")
+        self.progress_text.set_text(f"")
 
     def update_animation(self, frame):
         if not self.is_playing or self.audio_data is None:
@@ -469,5 +473,6 @@ if __name__ == '__main__':
     print("\n" + "="*60)
     print("MANDARIN QUIZ (CSV + AUTO LAUNCH + RANDOM 6)")
     print("="*60)
+    
     app = ToneIntroductionQuizMixed()
     app.show()

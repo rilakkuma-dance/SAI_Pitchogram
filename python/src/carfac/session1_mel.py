@@ -29,7 +29,7 @@ class ToneSpectrogramQuiz:
         self.script_dir = Path(__file__).parent.resolve()
         
         # 1. LOAD ITEMS FROM BOTH FOLDERS
-        items_one = self._load_from_folder('mandarin_audio_one_syllable')
+        items_one = self._load_from_folder('mandarin_audio_two_syllable')
         items_two = self._load_from_folder('mandarin_audio_two_syllable')
 
         if not items_one and not items_two:
@@ -98,7 +98,7 @@ class ToneSpectrogramQuiz:
             return items
 
         print(f"📂 Scanning: {folder_path}")
-        files = sorted(list(folder_path.glob("*.wav")))
+        files = sorted(list(folder_path.glob("*.m4a")) + list(folder_path.glob("*.wav")))
         
         for f in files:
             try:
@@ -188,18 +188,36 @@ class ToneSpectrogramQuiz:
         fpath = self.current_item['audio_path']
         self.current_audio_y, self.current_audio_sr = librosa.load(str(fpath), sr=None)
         
-        mel_spec = librosa.feature.melspectrogram(y=self.current_audio_y, sr=self.current_audio_sr, n_mels=128, fmin=50, fmax=4000)
+        # Generate the Mel Spectrogram
+        mel_spec = librosa.feature.melspectrogram(
+            y=self.current_audio_y, 
+            sr=self.current_audio_sr, 
+            n_mels=128, 
+            fmin=50, 
+            fmax=1000  # Focused on tone range
+        )
         log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max)
         
+        # --- CALCULATE TIME IN SECONDS ---
+        duration_sec = len(self.current_audio_y) / self.current_audio_sr
+        
+        # Update the data
         self.im_spec.set_data(log_mel_spec)
         self.im_spec.set_clim(vmin=log_mel_spec.min(), vmax=log_mel_spec.max())
-        self.im_spec.set_extent([0, log_mel_spec.shape[1], 0, 4000]) 
-        self.ax_spec.axis('on')
-        self.spectrogram_shown = True
         
+        # --- UPDATE EXTENT TO USE SECONDS ---
+        # set_extent ([left, right, bottom, top])
+        self.im_spec.set_extent([0, duration_sec, 0, 1000]) 
+        
+        # Ensure axis labels are visible and accurate
+        self.ax_spec.axis('on')
+        self.ax_spec.set_xlabel('Time (seconds)')
+        self.ax_spec.set_ylabel('Frequency (Hz)')
+        
+        self.spectrogram_shown = True
         self.btn_action.label.set_text('Check Answer')
         self.btn_action.ax.set_facecolor('#e67e22') 
-        self.status_text.set_text('Analyze the spectrogram and guess the tone!')
+        self.status_text.set_text('Analyze the pitch contour!')
         self.fig.canvas.draw_idle()
 
     def _check_answer(self):

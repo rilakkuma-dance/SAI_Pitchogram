@@ -1,4 +1,5 @@
 import sys
+import webbrowser
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -414,6 +415,8 @@ class SAIVisualizationWithWav2Vec2:
 
     def start(self):
         self.running = True
+        import webbrowser
+        webbrowser.open("https://google.github.io/carfac/pitchogram_demo/index.html")
         self._setup_audio_playback()
         self._setup_mic_stream()
         threading.Thread(target=self.process_realtime_audio, daemon=True).start()
@@ -573,8 +576,6 @@ class SAIVisualizationWithWav2Vec2:
         self.fig.canvas.draw_idle()
 
     def clear_phoneme_feedback(self, event=None):
-        self.vis_realtime.img[:] = 0
-        self.im_realtime.set_data(self.vis_realtime.img)
         if hasattr(self, 'status_text'):
             self.status_text.set_text('Ready')
             self.status_text.set_color('lime')
@@ -711,14 +712,6 @@ class SAIVisualizationWithWav2Vec2:
         while self.running:
             try:
                 audio_chunk = self.audio_queue.get(timeout=0.1)
-                nap_output = self.processor_realtime.process_chunk(audio_chunk)
-                sai_output = self.sai_realtime.RunSegment(nap_output)
-                self.vis_realtime.get_vowel_embedding(nap_output)
-                self.vis_realtime.run_frame(sai_output)
-                
-                if self.vis_realtime.img.shape[1] > 1:
-                    self.vis_realtime.img[:, :-1] = self.vis_realtime.img[:, 1:]
-                    self.vis_realtime.draw_column(self.vis_realtime.img[:, -1])
             except queue.Empty:
                 continue
 
@@ -759,17 +752,10 @@ class SAIVisualizationWithWav2Vec2:
                 self.im_file.set_data(self.vis_file.img)
                 self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
 
-            # --- 3. User SAI Update (Realtime) ---
-            # The heavy lifting is done in process_realtime_audio thread; 
-            # we just grab the latest image state here.
-            current_max_rt = np.max(self.vis_realtime.img) if self.vis_realtime.img.size > 0 else 1
-            self.im_realtime.set_data(self.vis_realtime.img)
-            self.im_realtime.set_clim(vmin=0, vmax=max(1, min(255, current_max_rt * 1.3)))
-
         except Exception:
             pass
             
-        return [self.im_realtime, self.im_file, self.status_text, self.practice_text, self.progress_text]
+        return [self.im_file, self.status_text, self.practice_text, self.progress_text]
     
     def toggle_record(self, event=None):
         try:
@@ -865,28 +851,19 @@ class SAIVisualizationWithWav2Vec2:
             print(f"⚠️ Could not find next script: {target_file}")
 
     def _setup_dual_visualization(self):
-        self.fig = plt.figure(figsize=(14, 8))
-        gs = self.fig.add_gridspec(3, 2, height_ratios=[6, 1.5, 0.5])
+        self.fig = plt.figure(figsize=(10, 8))  # narrower is fine now
+        gs = self.fig.add_gridspec(3, 1, height_ratios=[6, 1.5, 0.5])  # 1 column
 
-        self.ax_realtime = self.fig.add_subplot(gs[0, 0])
-        self.im_realtime = self.ax_realtime.imshow(
-            self.vis_realtime.img, aspect='auto', origin='upper',
-            interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='jet', vmin=0, vmax=255  # <--- CHANGED TO JET FOR HIGH CONTRAST
-        )
-        self.ax_realtime.set_title('Your Audio (Live)', color='lime', fontsize=12, weight='bold')
-        self.ax_realtime.axis('off')
-
-        self.ax_file = self.fig.add_subplot(gs[0, 1])
+        self.ax_file = self.fig.add_subplot(gs[0, 0])  # full width
         self.im_file = self.ax_file.imshow(
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
-            cmap='jet', vmin=0, vmax=255  # <--- CHANGED TO JET FOR HIGH CONTRAST
+            cmap='jet', vmin=0, vmax=255
         )
-        self.ax_file.set_title('Reference Pattern', color='cyan', fontsize=12, weight='bold')
+        self.ax_file.set_title('Reference Pitchogram', color='cyan', fontsize=14, weight='bold')
         self.ax_file.axis('off')
 
-        self.ax_practice = self.fig.add_subplot(gs[1, :])
+        self.ax_practice = self.fig.add_subplot(gs[1, 0])
         self.ax_practice.axis('off')
         
         current_item = self.practice_session.get_current_item() if self.practice_session else None
@@ -909,17 +886,18 @@ class SAIVisualizationWithWav2Vec2:
 
         from matplotlib.widgets import Button
         
-        self.ax_play_button = plt.axes([0.25, 0.05, 0.15, 0.04])
+        self.ax_play_button = plt.axes([0.20, 0.05, 0.20, 0.04])
         self.btn_playback = Button(self.ax_play_button, 'Play Reference', color='cyan', hovercolor='lightblue')
         self.btn_playback.on_clicked(self.toggle_playback)
 
-        self.ax_next_button = plt.axes([0.62, 0.05, 0.15, 0.04])
+        self.ax_next_button = plt.axes([0.60, 0.05, 0.20, 0.04])
         self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange', hovercolor='yellow')
         self.btn_next.on_clicked(self.next_item)
 
         self.fig.patch.set_facecolor('#121212')
         plt.subplots_adjust(left=0.05, right=0.95, top=0.92, bottom=0.1, hspace=0.2)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+
 # ---------------- Main Execution ----------------
 
 def main():
