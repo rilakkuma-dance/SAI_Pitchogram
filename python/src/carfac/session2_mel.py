@@ -119,7 +119,7 @@ class TonePracticeApp:
         # Initialize with same VMIN/VMAX as live view
         self.im_right = self.ax_right.imshow(np.full((N_MELS, NUM_FRAMES), -80.0), aspect='auto', 
                                             origin='lower', cmap='magma', extent=[0, DISPLAY_TIME, FMIN, FMAX],
-                                            vmin=-70, vmax=0)
+                                            vmin=-60, vmax=-10)
         self.ax_right.set_title("Reference Pattern", color='cyan')
         self.ax_right.axis('off')
 
@@ -157,7 +157,7 @@ class TonePracticeApp:
                 n_mels=N_MELS, fmin=FMIN, fmax=FMAX
             )
             # Power to DB
-            log_mel = librosa.power_to_db(mel_spec, ref=np.max)
+            log_mel = librosa.power_to_db(mel_spec, ref=1.0)
             
             new_frames = log_mel.shape[1]
             if new_frames > NUM_FRAMES:
@@ -210,7 +210,7 @@ class TonePracticeApp:
         ref_mel = librosa.feature.melspectrogram(y=y, sr=sr, n_fft=N_FFT, hop_length=HOP_LENGTH, 
                                                 n_mels=N_MELS, fmin=FMIN, fmax=FMAX)
         # Use a fixed reference for db conversion to ensure visibility
-        ref_db = librosa.power_to_db(ref_mel, ref=np.max)
+        ref_db = librosa.power_to_db(ref_mel, ref=1.0)
         
         # Center the reference in the 3s window
         ref_display = np.full((N_MELS, NUM_FRAMES), -80.0)
