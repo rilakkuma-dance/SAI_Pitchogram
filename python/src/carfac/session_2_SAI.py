@@ -566,14 +566,45 @@ class SAIVisualizationWithWav2Vec2:
             
             self.vis_file.img[:] = 0
             self.im_file.set_data(self.vis_file.img)
-        else:
-            print("Audio path invalid or not found.")
-        
+
+        # --- Highlight the tone-reference image(s) for the current item ---
+        try:
+            self._highlight_tone_images_for_item(item)
+        except Exception as e:
+            print(f"Tone highlight error: {e}")
+
         if hasattr(self, 'status_text'):
             self.status_text.set_text('Ready')
             self.status_text.set_color('yellow')
             
         self.fig.canvas.draw_idle()
+
+    def _highlight_tone_images_for_item(self, item):
+        """Highlight the tone reference image(s) that correspond to the current item's tone(s)."""
+        if not hasattr(self, 'tone_image_axes'):
+            return
+        tone_field = str(item.get('tone', ''))
+        # Tones can be like "1", "3", or "2-4" for two-syllable items
+        active_tones = set()
+        for part in tone_field.replace(',', '-').split('-'):
+            part = part.strip()
+            if part.isdigit():
+                n = int(part)
+                if 1 <= n <= 4:
+                    active_tones.add(n)
+
+        for i, ax_tone in enumerate(self.tone_image_axes):
+            tone_num = i + 1
+            is_active = tone_num in active_tones
+            for spine in ax_tone.spines.values():
+                spine.set_color('#ffd54a' if is_active else '#666666')
+                spine.set_linewidth(3.0 if is_active else 1.2)
+            ax_tone.set_title(
+                f"Tone {tone_num}",
+                color=('#ffd54a' if is_active else 'white'),
+                fontsize=12,
+                weight=('bold' if is_active else 'normal'),
+            )
 
     def clear_phoneme_feedback(self, event=None):
         if hasattr(self, 'status_text'):
@@ -714,6 +745,7 @@ class SAIVisualizationWithWav2Vec2:
                 audio_chunk = self.audio_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
+            # No real-time pitchogram panel in this layout — chunks are simply drained.
 
     def update_visualization(self, frame):
         # --- 1. Check if audio finished naturally or was stopped ---
@@ -747,15 +779,16 @@ class SAIVisualizationWithWav2Vec2:
                                     self.vis_file.draw_column(self.vis_file.img[:, -1])
                     except Exception:
                         pass
-                
+
                 current_max_file = np.max(self.vis_file.img) if self.vis_file.img.size else 1
                 self.im_file.set_data(self.vis_file.img)
                 self.im_file.set_clim(vmin=0, vmax=max(1, min(255, current_max_file * 1.3)))
 
         except Exception:
             pass
-            
-        return [self.im_file, self.status_text, self.practice_text, self.progress_text]
+
+        return [self.im_file, self.status_text,
+                self.practice_text, self.progress_text]
     
     def toggle_record(self, event=None):
         try:
@@ -850,52 +883,177 @@ class SAIVisualizationWithWav2Vec2:
         else:
             print(f"⚠️ Could not find next script: {target_file}")
 
-    def _setup_dual_visualization(self):
-        self.fig = plt.figure(figsize=(10, 8))  # narrower is fine now
-        gs = self.fig.add_gridspec(3, 1, height_ratios=[6, 1.5, 0.5])  # 1 column
+    def switch_to_perception(self, event=None):
+        """Close the current production prototype and launch the perception prototype."""
+        target_file = "session_1_SAI.py"
+        current_dir = Path(__file__).parent
+        perception_script = current_dir / target_file
+        # Try a couple of likely sibling locations as fallback
+        if not perception_script.exists():
+            perception_script = current_dir.parent / "session_1_tone_recognition" / target_file
+        if not perception_script.exists():
+            perception_script = current_dir.parent / target_file
 
-        self.ax_file = self.fig.add_subplot(gs[0, 0])  # full width
+        if perception_script.exists():
+            print(f"🔀 Switching to Perception prototype: {perception_script}")
+            try:
+                subprocess.Popen([sys.executable, str(perception_script)])
+            except Exception as e:
+                print(f"⚠️ Failed to launch perception script: {e}")
+                return
+            # Stop current visualization gracefully
+            self.running = False
+            try:
+                plt.close(self.fig)
+            except Exception:
+                pass
+        else:
+            print(f"⚠️ Could not find perception script: {target_file}")
+            if hasattr(self, 'status_text'):
+                self.status_text.set_text(f"Perception script not found: {target_file}")
+                self.status_text.set_color('red')
+                self.fig.canvas.draw_idle()
+
+    def _load_tone_reference_image(self, tone_number):
+        """
+        Load a tone-reference image (tone_1.png, tone_2.png, tone_3.png, tone_4.png)
+        from the script directory. If the file does not exist, generate a simple
+        tone-contour fallback image so the layout still renders.
+        Returns a 2D/3D numpy array suitable for imshow.
+        """
+        candidate_paths = [
+            self.script_dir / f"tone_{tone_number}.png",
+            self.script_dir / "tone_images" / f"tone_{tone_number}.png",
+            self.script_dir / "assets" / f"tone_{tone_number}.png",
+        ]
+        for p in candidate_paths:
+            if p.exists():
+                try:
+                    img = plt.imread(str(p))
+                    return img
+                except Exception as e:
+                    print(f"Could not read tone image {p}: {e}")
+
+        # --- Fallback: draw a simple tone contour as a numpy image ---
+        H, W = 80, 120
+        img = np.ones((H, W, 3), dtype=np.float32)  # white background
+        xs = np.linspace(0, 1, W)
+        if tone_number == 1:        # high-level
+            ys = np.full_like(xs, 0.2)
+        elif tone_number == 2:      # rising
+            ys = 1.0 - xs * 0.8
+        elif tone_number == 3:      # dipping
+            ys = 0.4 + 0.55 * (2 * xs - 1) ** 2
+            ys = 1.0 - ys
+        elif tone_number == 4:      # falling
+            ys = 0.2 + xs * 0.8
+        else:
+            ys = np.full_like(xs, 0.5)
+        ys_pix = np.clip((ys * (H - 10) + 5).astype(int), 0, H - 1)
+        # Draw the curve in black with a small thickness
+        for x, y in zip(np.arange(W), ys_pix):
+            for dy in range(-2, 3):
+                yy = np.clip(y + dy, 0, H - 1)
+                img[yy, x] = [0.0, 0.0, 0.0]
+        return img
+
+    def _setup_dual_visualization(self):
+        # Single-panel layout (right side of the original sketch only):
+        #   row 0: Reference Pitchogram (large)
+        #   row 1: Reference waveform (small)
+        #   row 2: Four tone-reference images (1, 2, 3, 4) in a row
+        #   row 3: Practice text + status (buttons sit below via plt.axes)
+        self.fig = plt.figure(figsize=(10, 8))
+        gs = self.fig.add_gridspec(
+            4, 1, height_ratios=[5, 1.2, 1.6, 1.2], hspace=0.35
+        )
+
+        # --- Reference pitchogram ---
+        self.ax_file = self.fig.add_subplot(gs[0, 0])
         self.im_file = self.ax_file.imshow(
             self.vis_file.img, aspect='auto', origin='upper',
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='jet', vmin=0, vmax=255
         )
-        self.ax_file.set_title('Reference Pitchogram', color='cyan', fontsize=30, weight='bold')
+        self.ax_file.set_title('Pitchogram', color='cyan', fontsize=24, weight='bold')
         self.ax_file.axis('off')
 
-        self.ax_practice = self.fig.add_subplot(gs[1, 0])
+        # --- Four tone-reference images (1, 2, 3, 4) in a row ---
+        tone_row_gs = gs[2, 0].subgridspec(1, 4, wspace=0.25)
+        self.tone_image_axes = []
+        self.tone_image_handles = []
+        for i in range(4):
+            ax_tone = self.fig.add_subplot(tone_row_gs[0, i])
+            tone_num = i + 1
+            tone_img = self._load_tone_reference_image(tone_num)
+            handle = ax_tone.imshow(tone_img)
+            ax_tone.set_title(f"Tone {tone_num}", color='white', fontsize=12)
+            ax_tone.set_xticks([])
+            ax_tone.set_yticks([])
+            for spine in ax_tone.spines.values():
+                spine.set_color('#666666')
+                spine.set_linewidth(1.2)
+            self.tone_image_axes.append(ax_tone)
+            self.tone_image_handles.append(handle)
+
+        # --- Practice text + status ---
+        self.ax_practice = self.fig.add_subplot(gs[3, 0])
         self.ax_practice.axis('off')
-        
+
         current_item = self.practice_session.get_current_item() if self.practice_session else None
         item_text = ""
         if current_item:
             progress = self.practice_session.get_progress_string()
             item_text = f"{current_item['chinese']} ({current_item['pinyin']}) - {progress}"
-        
+
         self.practice_text = self.ax_practice.text(
-            0.5, 0.6, item_text, transform=self.ax_practice.transAxes,
-            color='white', ha='center', fontsize=30, weight='bold'
+            0.5, 0.7, item_text, transform=self.ax_practice.transAxes,
+            color='white', ha='center', fontsize=26, weight='bold'
         )
 
         self.status_text = self.ax_practice.text(
             0.5, 0.2, 'Ready', transform=self.ax_practice.transAxes,
-            color='yellow', ha='center', fontsize=30
+            color='yellow', ha='center', fontsize=22
         )
 
-        self.progress_text = self.ax_practice.text(0, 0, "", alpha=0) 
+        # Hidden helper text (kept for blitting compatibility with existing code)
+        self.progress_text = self.ax_practice.text(0, 0, "", alpha=0)
 
+        # ===================== Buttons =====================
         from matplotlib.widgets import Button
-        
-        self.ax_play_button = plt.axes([0.20, 0.05, 0.20, 0.04])
-        self.btn_playback = Button(self.ax_play_button, 'Play Reference', color='cyan', hovercolor='lightblue')
+
+        btn_y = 0.04
+        btn_h = 0.045
+
+        # Play Reference
+        self.ax_play_button = plt.axes([0.10, btn_y, 0.22, btn_h])
+        self.btn_playback = Button(
+            self.ax_play_button, 'Play Reference',
+            color='cyan', hovercolor='lightblue'
+        )
         self.btn_playback.on_clicked(self.toggle_playback)
 
-        self.ax_next_button = plt.axes([0.60, 0.05, 0.20, 0.04])
-        self.btn_next = Button(self.ax_next_button, 'Next Item', color='orange', hovercolor='yellow')
+        # Next Question
+        self.ax_next_button = plt.axes([0.40, btn_y, 0.22, btn_h])
+        self.btn_next = Button(
+            self.ax_next_button, 'Next Question',
+            color='orange', hovercolor='yellow'
+        )
         self.btn_next.on_clicked(self.next_item)
 
+        # Switch to Perception — sits next to Next Question
+        self.ax_perception_button = plt.axes([0.70, btn_y, 0.22, btn_h])
+        self.btn_perception = Button(
+            self.ax_perception_button, 'Perception',
+            color='#9b59b6', hovercolor='#bb6fd6'
+        )
+        self.btn_perception.on_clicked(self.switch_to_perception)
+
+        # ===================== Final styling =====================
         self.fig.patch.set_facecolor('#121212')
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.92, bottom=0.1, hspace=0.2)
+        plt.subplots_adjust(
+            left=0.06, right=0.96, top=0.92, bottom=0.12
+        )
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
 
 # ---------------- Main Execution ----------------

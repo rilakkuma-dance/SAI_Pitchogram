@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.widgets import Button
+from matplotlib.patches import FancyBboxPatch
 import sys
 import numpy as np
 from pathlib import Path
@@ -13,21 +14,61 @@ import subprocess
 import csv 
 from datetime import datetime
 
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams['font.serif'] = ['Times New Roman']
+# ==========================================
+# DESIGN TOKENS
+# ==========================================
+class Design:
+    bg_main = '#FFFFFF'
+    bg_dark_card = '#1A1A2E'
+    text_main = '#222222'
+    text_muted = '#7F8C8D'
+    text_mono = '#A0A0B0'
+    
+    # Distinct tone identity
+    tones = {
+        1: '#3498DB', # Blue
+        2: '#2ECC71', # Green
+        3: '#F1C40F', # Amber
+        4: '#E74C3C'  # Rose
+    }
+    tones_light = {
+        1: '#EAF2F8', 
+        2: '#E9F7EF', 
+        3: '#FEF9E7', 
+        4: '#FDEDEC'
+    }
+    
+    status = {
+        'idle': '#7F8C8D',
+        'playing': '#2ECC71',
+        'done': '#3498DB'
+    }
+    
+    progress_fill = '#3498DB'
+    btn_play = '#3498DB'
+    btn_play_hover = '#5DADE2'
+    btn_next = '#BDC3C7'
+    btn_mode = '#444466'
+    correct = '#27AE60'
+    incorrect = '#E74C3C'
+    
+    # Typography
+    font_serif = 'Georgia'
+    font_mono = 'Courier New'
+    font_sans = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+
+
+plt.rcParams['font.family'] = Design.font_serif
+plt.rcParams['font.serif'] = [Design.font_serif]
 plt.rcParams['mathtext.fontset'] = 'stix'
+plt.rcParams['font.sans-serif'] = Design.font_sans
+plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
 # IMPORT THE NEW CONFIGURATION HELPER
 # ==========================================
 from sai_config import get_sai_params
 # ==========================================
-
-# ==========================================
-# FIX: CONFIGURE FONTS FOR CHINESE SUPPORT
-# ==========================================
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False 
 
 # JAX/CARFAC/SAI imports
 try:
@@ -134,18 +175,8 @@ class SAIProcessor:
 # MAIN QUIZ CLASS
 # -----------------------------------------------------------
 class ToneIntroductionQuizMixed:
-    # --- Fix 5: Restore TONE_SHAPES so answer logic doesn't crash ---
     TONE_SHAPES = {1: '―', 2: '╱', 3: '∨', 4: '╲'}
     
-    # --- 2-Color Duo-Tone Scheme ---
-    TONE_COLORS = {
-        1: '#005B96',  # Deep Accessible Blue
-        2: '#005B96',  # Charcoal Gray
-        3: '#005B96',  # Deep Accessible Blue
-        4: '#005B96',  # Charcoal Gray
-    }
-
-    # --- Fix 4: Make paths absolute relative to the script's directory ---
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     IMAGE_DIR = os.path.join(SCRIPT_DIR, 'pitchogram_screenshot')
 
@@ -156,7 +187,6 @@ class ToneIntroductionQuizMixed:
         4: os.path.join(IMAGE_DIR, 'tone4.png')
     }
 
-    # Single folder containing all .wav files (1- and 2-syllable mixed)
     AUDIO_FOLDER = 'mandarin_audio'
 
     def __init__(self):
@@ -164,13 +194,11 @@ class ToneIntroductionQuizMixed:
         self.sample_rate = 16000
         self.chunk_size = 450
         
-        # 1. Setup single folder
         self.audio_folder = self._find_folder(self.AUDIO_FOLDER)
         if not self.audio_folder:
             print(f"ERROR: Folder '{self.AUDIO_FOLDER}' not found "
                   f"in {self.script_dir} or its parent.")
         
-        # 2. Scan the folder; syllable count is inferred from each filename
         all_items = self._scan_folder(self.audio_folder)
         items_one = [it for it in all_items if it['syllables'] == 1]
         items_two = [it for it in all_items if it['syllables'] == 2]
@@ -178,7 +206,6 @@ class ToneIntroductionQuizMixed:
         random.shuffle(items_one)
         random.shuffle(items_two)
 
-        # Pick 3 of each (or as many as available)
         selected_one = items_one[:15]
         selected_two = items_two[:15]
         
@@ -189,10 +216,8 @@ class ToneIntroductionQuizMixed:
               f"({len(selected_one)} 1-syllable, {len(selected_two)} 2-syllable) "
               f"from '{self.AUDIO_FOLDER}'.")
         
-        # 3. Control Flags
         self.is_playing = False
         
-        # 4. SAI Setup
         self.processor = AudioProcessor(fs=self.sample_rate)
         self.n_channels = self.processor.n_channels
         
@@ -200,25 +225,21 @@ class ToneIntroductionQuizMixed:
         self.sai_processor = SAIProcessor(self.sai_params)
         self.vis = VisualizationHandler(self.sample_rate, self.sai_params)
         
-        # RGB Buffer
         self.rgb_img = np.zeros((self.n_channels, 400, 3), dtype=np.float32)
 
-        # 5. Audio Playback Variables
         self.audio_data = None
         self.current_frame_index = 0
         
-        # 6. Quiz State
         self.current_item = None
         self.answered = False
         self.question_count = 0
         self.max_questions = len(self.vocab_items)
         self.results = [] 
 
-        # Tone selection state — list of integers in selection order
         self.selected_tones = []
         
         self.fig = plt.figure(figsize=(11, 10))
-        self.fig.patch.set_facecolor('white')
+        self.fig.patch.set_facecolor(Design.bg_main)
         self.fig.canvas.manager.set_window_title("")       
         
         self.timer_started = False
@@ -226,7 +247,6 @@ class ToneIntroductionQuizMixed:
         
         self._setup_interface()
 
-        # Keyboard: digits select tones, 'p' toggles to production, etc.
         self.fig.canvas.mpl_connect('key_press_event', self._on_key_press)
         
         if self.vocab_items:
@@ -242,10 +262,6 @@ class ToneIntroductionQuizMixed:
         return None
 
     def _scan_folder(self, folder_path):
-        """Scan one folder containing .wav files of the form
-        '<idx>_<chinese>_<tone>.wav', e.g. '01_天_1.wav' or '01_中国_12.wav'.
-        The number of digits in <tone> determines the syllable count.
-        """
         items = []
         if not folder_path:
             return items
@@ -253,25 +269,18 @@ class ToneIntroductionQuizMixed:
         for file_path in folder_path.glob('*.wav'):
             try:
                 parts = file_path.stem.split('_')
-                if len(parts) < 3:
-                    print(f"Skipping (unexpected name): {file_path.name}")
-                    continue
+                if len(parts) < 3: continue
 
                 tone = parts[-1]
                 chinese = parts[-2]
-
-                # Syllable count = number of digit characters in the tone field.
-                # Examples: '1' -> 1, '12' -> 2, '4-3' -> 2.
                 tone_digits = ''.join(ch for ch in tone if ch.isdigit())
-                if not tone_digits:
-                    print(f"Skipping (no tone digits): {file_path.name}")
-                    continue
+                if not tone_digits: continue
                 syllables = len(tone_digits)
 
                 items.append({
                     "id": file_path.name,
                     "chinese": chinese,
-                    "tone": tone_digits,         # normalized: digits only
+                    "tone": tone_digits,
                     "audio_path": file_path,
                     "syllables": syllables,
                 })
@@ -280,106 +289,97 @@ class ToneIntroductionQuizMixed:
         return items
 
     # ---------------------------------------------------------------
-    # UI: matches the sketch — pitchogram on top, "Identify the tone(s)",
-    # four tone buttons [1 ―] [2 ╱] [3 ∨] [4 ╲], and an "Answer" box.
+    # NEW UI DESIGN
     # ---------------------------------------------------------------
     def _setup_interface(self):
         self.ax_ui = self.fig.add_axes([0, 0, 1, 1])
         self.ax_ui.axis('off')
 
-        # --- Pitchogram (the SAI display, framed like in the sketch) ---
-        self.ax_sai = self.fig.add_axes([0.10, 0.55, 0.80, 0.36])
+        # --- Header Progress Bar ---
+        self.progress_text = self.ax_ui.text(
+            0.1, 0.965, '', ha='left', va='center',
+            fontsize=16, fontfamily=Design.font_serif, color=Design.text_muted
+        )
+        self.ax_progress_bg = self.fig.add_axes([0.1, 0.94, 0.8, 0.005])
+        self.ax_progress_bg.axis('off')
+        self.ax_progress_bg.add_patch(plt.Rectangle((0,0), 1, 1, facecolor='#E0E0E0', transform=self.ax_progress_bg.transAxes))
+        self.progress_bar = plt.Rectangle((0,0), 0, 1, facecolor=Design.progress_fill, transform=self.ax_progress_bg.transAxes)
+        self.ax_progress_bg.add_patch(self.progress_bar)
+
+        # --- Dark Pitchogram Panel ---
+        self.ax_panel = self.fig.add_axes([0.10, 0.55, 0.80, 0.36])
+        self.ax_panel.axis('off')
+        self.ax_panel.add_patch(plt.Rectangle((0,0), 1, 1, facecolor=Design.bg_dark_card, transform=self.ax_panel.transAxes))
+
+        self.ax_panel.text(0.02, 0.92, 'LIVE DISPLAY', ha='left', va='center',
+                           fontsize=12, fontfamily=Design.font_mono, color=Design.text_mono, transform=self.ax_panel.transAxes)
+        self.status_pill = self.ax_panel.text(0.20, 0.92, '● idle', ha='left', va='center',
+                                              fontsize=12, fontfamily=Design.font_mono, color=Design.status['idle'], transform=self.ax_panel.transAxes)
+
+        # SAI Image inside panel
+        self.ax_sai = self.fig.add_axes([0.12, 0.62, 0.76, 0.25])
         self.im_sai = self.ax_sai.imshow(
-            self.rgb_img,
-            aspect='auto', origin='upper',
+            self.rgb_img, aspect='auto', origin='upper',
             extent=[0, 11.25, self.processor.n_channels, 0]
         )
         self.ax_sai.set_xticks([])
         self.ax_sai.set_yticks([])
         for spine in self.ax_sai.spines.values():
             spine.set_visible(True)
-            spine.set_edgecolor('#222')
-            spine.set_linewidth(2)
+            spine.set_edgecolor('#333344')
+            spine.set_linewidth(1)
 
-        # "pitchogram" title
-        self.ax_ui.text(
-            0.5, 0.935, 'pitchogram',
-            ha='center', va='center', fontsize=30, weight='bold', color='#222'
-        )
-
-        # --- Mode indicator (small, top-right) ---
-
-        # --- Prompt: "Identify the tone(s)" ---
+        # --- Prompt ---
         self.prompt_text = self.ax_ui.text(
             0.5, 0.48, 'Identify the tone(s)',
             ha='center', va='center',
-            fontsize=30, weight='bold', color='#222'
+            fontsize=26, weight='bold', fontfamily=Design.font_serif, color=Design.text_main
         )
 
-        # --- Status / progress (small, just under the prompt) ---
-        self.status_text = self.ax_ui.text(
-            0.5, 0.435, 'Click Play to listen',
-            ha='center', va='center',
-            fontsize=20, color='#7f8c8d'
-        )
-        self.progress_text = self.ax_ui.text(
-            0.5, 0.405, '', ha='center', va='center',
-            fontsize=20, color='#7f8c8d'
-        )
-
-        # --- Four tone buttons in a row ---
+        # --- Distinct Tone Buttons ---
         n_buttons = 4
-        total_width = 0.16       # Total width for the button + image combo
+        total_width = 0.16
         button_height = 0.10
-        side_margin = 0.06
+        side_margin = 0.08
         gap = (1.0 - 2 * side_margin - n_buttons * total_width) / (n_buttons - 1)
-        button_y = 0.23
+        button_y = 0.33
 
         self.tone_buttons = {}
         self.tone_button_axes = {}
-        self.tone_image_axes = {} # Store image axes to prevent garbage collection
+        self.tone_image_axes = {}
 
         for i, tone_num in enumerate([1, 2, 3, 4]):
             x = side_margin + i * (total_width + gap)
-            color = self.TONE_COLORS[tone_num]
+            base_color = Design.tones[tone_num]
+            light_color = Design.tones_light[tone_num]
             
-            # Divide the total space: 40% for the button (number), 60% for the image
             btn_w = total_width * 0.40
             img_w = total_width * 0.60
             
-            # --- The Button Axes ---
             ax_btn = self.fig.add_axes([x, button_y, btn_w, button_height])
-            label = f"{tone_num}"
-            btn = Button(ax_btn, label, color=color, hovercolor=self._lighten(color))
-            btn.label.set_fontsize(30)
+            btn = Button(ax_btn, str(tone_num), color=light_color, hovercolor=base_color)
+            btn.label.set_fontsize(28)
             btn.label.set_weight('bold')
-            btn.label.set_color('white')
+            btn.label.set_fontfamily(Design.font_serif)
+            btn.label.set_color(base_color)
             btn.on_clicked(lambda event, t=tone_num: self._on_tone_button(t))
             
             self.tone_buttons[tone_num] = btn
             self.tone_button_axes[tone_num] = ax_btn
 
-            # --- The Image Axes (Positioned strictly next to it) ---
             img_x = x + btn_w
             ax_img = self.fig.add_axes([img_x, button_y, img_w, button_height])
             ax_img.axis('off')
-            
-            # Give the image axes the same background color
             ax_img.patch.set_visible(True)
-            ax_img.patch.set_facecolor(color)
+            ax_img.patch.set_facecolor(light_color)
 
-            # Load and draw the image
             try:
                 img_path = self.TONE_IMAGES[tone_num]
                 if os.path.exists(img_path):
                     img = plt.imread(img_path)
                     ax_img.imshow(img, aspect='equal')
-                else:
-                    print(f"Warning: Image file not found at {img_path}")
-            except Exception as e:
-                print(f"Error loading image for tone {tone_num}: {e}")
+            except Exception: pass
 
-            # --- Make the image clickable too ---
             def make_img_clickable(event, t=tone_num, axis=ax_img):
                 if event.inaxes == axis:
                     self._on_tone_button(t)
@@ -387,79 +387,114 @@ class ToneIntroductionQuizMixed:
             self.fig.canvas.mpl_connect('button_press_event', make_img_clickable)
             self.tone_image_axes[tone_num] = ax_img
 
-        # --- Answer box ---
-        self.answer_text = self.ax_ui.text(
-            0.5, 0.13, 'Answer:  [ _ ]',
-            ha='center', va='center',
-            fontsize=30, weight='bold', color='#222',
-            bbox=dict(
-                boxstyle='round,pad=0.6',
-                facecolor='#f4f4f4',
-                edgecolor='#888',
-                linewidth=2
-            )
-        )
+        # --- Visual Answer Slots ---
+        self.ax_answer_area = self.fig.add_axes([0.3, 0.15, 0.4, 0.12])
+        self.ax_answer_area.axis('off')
+        
+        self.slot1 = FancyBboxPatch((0.1, 0.2), 0.35, 0.6, boxstyle="round,pad=0,rounding_size=0.1", 
+                                    facecolor='#EFEFEF', edgecolor='#CCCCCC', lw=2, transform=self.ax_answer_area.transAxes)
+        self.ax_answer_area.add_patch(self.slot1)
+        self.slot1_text = self.ax_answer_area.text(0.275, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_serif, color='white', transform=self.ax_answer_area.transAxes)
+        
+        self.slot_divider = self.ax_answer_area.text(0.5, 0.5, '-', ha='center', va='center', fontsize=24, color='#999999', transform=self.ax_answer_area.transAxes)
+        
+        self.slot2 = FancyBboxPatch((0.55, 0.2), 0.35, 0.6, boxstyle="round,pad=0,rounding_size=0.1", 
+                                    facecolor='#EFEFEF', edgecolor='#CCCCCC', lw=2, transform=self.ax_answer_area.transAxes)
+        self.ax_answer_area.add_patch(self.slot2)
+        self.slot2_text = self.ax_answer_area.text(0.725, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_serif, color='white', transform=self.ax_answer_area.transAxes)
 
-        # --- Feedback text ---
-        self.feedback_text = self.ax_ui.text(
-            0.5, 0.075, '',
-            ha='center', va='center',
-            fontsize=20, weight='bold', color='#7f8c8d'
-        )
+        # Inline Feedback Badge
+        self.feedback_badge = self.ax_ui.text(0.72, 0.22, '', ha='left', va='center', fontsize=18, fontfamily='Segoe UI Symbol', weight='bold')
+        self.reveal_char = self.ax_ui.text(0.72, 0.17, '', ha='left', va='center', fontsize=22, fontfamily=Design.font_sans[0], color=Design.text_main)
 
-        # --- Bottom row: Play / Next / Mode buttons ---
-        self.ax_play_btn = plt.axes([0.18, 0.005, 0.22, 0.045])
-        self.btn_action = Button(self.ax_play_btn, '▶ Play', color='#3498db', hovercolor='#5dade2')
-        self.btn_action.label.set_fontfamily('Segoe UI Symbol') 
-        self.btn_action.label.set_color('white')
-        self.btn_action.label.set_weight('bold')
-        self.btn_action.label.set_fontsize(20)
-        self.btn_action.on_clicked(self._handle_play_click)
+        # --- Cleaner Action Row (Bottom Alignment) ---
+        self.ax_play_btn = plt.axes([0.24, 0.05, 0.14, 0.045])
+        self.btn_play = Button(self.ax_play_btn, '▶ Play', color=Design.btn_play, hovercolor=Design.btn_play_hover)
+        self.btn_play.label.set_color('white')
+        self.btn_play.label.set_fontfamily(Design.font_sans[0])
+        self.btn_play.label.set_weight('bold')
+        self.btn_play.label.set_fontsize(16)
+        self.btn_play.on_clicked(self._handle_play_click)
 
-        self.ax_next_btn = plt.axes([0.42, 0.005, 0.18, 0.045])
-        self.btn_next = Button(self.ax_next_btn, 'Next →', color='#bdc3c7', hovercolor='#95a5a6')
+        self.ax_next_btn = plt.axes([0.40, 0.05, 0.14, 0.045])
+        self.btn_next = Button(self.ax_next_btn, 'Next →', color=Design.btn_next, hovercolor='#95A5A6')
         self.btn_next.label.set_color('#222')
         self.btn_next.label.set_weight('bold')
-        self.btn_next.label.set_fontsize(20)
+        self.btn_next.label.set_fontsize(16)
         self.btn_next.on_clicked(lambda event: self._next_word())
 
-        self.ax_mode_btn = plt.axes([0.62, 0.005, 0.22, 0.045])
-        self.btn_mode = Button(self.ax_mode_btn, 'Production Mode', color='#444466', hovercolor='#6666aa')
+        self.ax_mode_btn = plt.axes([0.56, 0.05, 0.20, 0.045])
+        self.btn_mode = Button(self.ax_mode_btn, 'Production Mode', color=Design.btn_mode, hovercolor='#6666AA')
         self.btn_mode.label.set_color('white')
         self.btn_mode.label.set_weight('bold')
-        self.btn_mode.label.set_fontsize(20)
+        self.btn_mode.label.set_fontsize(16)
         self.btn_mode.on_clicked(lambda event: self._switch_to_production())
 
-    @staticmethod
-    def _lighten(hex_color, amount=0.18):
-        hex_color = hex_color.lstrip('#')
-        rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
-        new_rgb = tuple(min(255, int(c + (255 - c) * amount)) for c in rgb)
-        return '#{:02x}{:02x}{:02x}'.format(*new_rgb)
+        self._update_tone_buttons()
 
-    # ---------------------------------------------------------------
-    # Answer / Tone selection logic
-    # ---------------------------------------------------------------
+
+    def _update_tone_buttons(self):
+        """Selected state inverts automatically."""
+        for t in [1, 2, 3, 4]:
+            ax_btn = self.tone_button_axes[t]
+            btn = self.tone_buttons[t]
+            ax_img = self.tone_image_axes[t]
+            
+            base_color = Design.tones[t]
+            light_color = Design.tones_light[t]
+            
+            if t in self.selected_tones:
+                btn.color = base_color
+                btn.hovercolor = base_color
+                btn.label.set_color('white')
+                ax_img.patch.set_facecolor(base_color)
+            else:
+                btn.color = light_color
+                btn.hovercolor = base_color
+                btn.label.set_color(base_color)
+                ax_img.patch.set_facecolor(light_color)
+            ax_btn.set_facecolor(btn.color)
+        self.fig.canvas.draw_idle()
+
+
     def _update_answer_display(self):
         if not self.current_item:
-            self.answer_text.set_text('Answer:  [ _ ]')
             return
 
         n_syllables = self.current_item.get('syllables', 1)
 
-        if not self.selected_tones:
-            if n_syllables == 1:
-                self.answer_text.set_text('Answer:  [ _ ]')
-            else:
-                self.answer_text.set_text('Answer:  [ _ ] - [ _ ]')
-            return
+        if n_syllables == 1:
+            self.slot2.set_visible(False)
+            self.slot2_text.set_visible(False)
+            self.slot_divider.set_visible(False)
+            self.slot1.set_bounds(0.325, 0.2, 0.35, 0.6)
+            self.slot1_text.set_position((0.5, 0.5))
+        else:
+            self.slot2.set_visible(True)
+            self.slot2_text.set_visible(True)
+            self.slot_divider.set_visible(True)
+            self.slot1.set_bounds(0.1, 0.2, 0.35, 0.6)
+            self.slot1_text.set_position((0.275, 0.5))
+            self.slot2.set_bounds(0.55, 0.2, 0.35, 0.6)
+            self.slot2_text.set_position((0.725, 0.5))
 
-        parts = []
-        for t in self.selected_tones:
-            parts.append(f"[{t} {self.TONE_SHAPES.get(t, '?')}]")
-        while len(parts) < n_syllables:
-            parts.append('[ _ ]')
-        self.answer_text.set_text('Answer:  ' + ' - '.join(parts))
+        def fill_slot(slot, text_obj, idx):
+            if idx < len(self.selected_tones):
+                t = self.selected_tones[idx]
+                slot.set_facecolor(Design.tones[t])
+                slot.set_edgecolor(Design.tones[t])
+                text_obj.set_text(f"{t} {self.TONE_SHAPES.get(t, '?')}")
+            else:
+                slot.set_facecolor('#EFEFEF')
+                slot.set_edgecolor('#CCCCCC')
+                text_obj.set_text('')
+
+        fill_slot(self.slot1, self.slot1_text, 0)
+        if n_syllables > 1:
+            fill_slot(self.slot2, self.slot2_text, 1)
+
+        self._update_tone_buttons()
+
 
     def _on_tone_button(self, tone_number):
         if not self.current_item:
@@ -479,7 +514,6 @@ class ToneIntroductionQuizMixed:
         if len(self.selected_tones) == n_syllables:
             self._check_answer()
 
-        self.fig.canvas.draw_idle()
 
     def _check_answer(self):
         if not self.current_item or self.answered:
@@ -506,30 +540,28 @@ class ToneIntroductionQuizMixed:
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
 
-        self.status_text.set_text(f'Revealed: {self.current_item["chinese"]} (Tone {correct_answer})')
-        self.status_text.set_color('#555555')
+        self.status_pill.set_text('● done')
+        self.status_pill.set_color(Design.status['done'])
+
+        self.reveal_char.set_text(f'{self.current_item["chinese"]}')
 
         if is_correct:
-            self.feedback_text.set_text('✓ CORRECT')
-            self.feedback_text.set_fontfamily('Segoe UI Symbol') # Corrected!
-            self.feedback_text.set_color('#27ae60')
+            self.feedback_badge.set_text('✓ Correct')
+            self.feedback_badge.set_color(Design.correct)
+            self.feedback_badge.set_fontfamily('Segoe UI Symbol')
         else:
-            correct_tones = [int(c) for c in correct_answer if c.isdigit()]
-            correct_display = ' - '.join(
-                f"[{t} {self.TONE_SHAPES.get(t, '?')}]" for t in correct_tones
-            )
-            self.feedback_text.set_text(f'✗ INCORRECT — Correct: {correct_display}')
-            self.feedback_text.set_fontfamily('Segoe UI Symbol') # Corrected!
-            self.feedback_text.set_color('#e74c3c')
+            correct_display = ' · '.join(list(correct_answer))
+            self.feedback_badge.set_text(f'✗ Correct: {correct_display}')
+            self.feedback_badge.set_color(Design.incorrect)
+            self.feedback_badge.set_fontfamily('Segoe UI Symbol')
 
-        self.btn_action.label.set_text('Next Question')
-        self.btn_action.ax.set_facecolor('#27ae60')
+        self.btn_play.label.set_text('▶ Replay')
+        self.fig.canvas.draw_idle()
+
 
     def _handle_play_click(self, event):
-        if self.answered:
-            self._next_word()
-            return
         self._start_loop()
+
 
     def _start_loop(self):
         if not self.current_item:
@@ -548,15 +580,18 @@ class ToneIntroductionQuizMixed:
                     self.question_start_time = time.time()
                     self.timer_started = True
 
-                self.btn_action.label.set_text('▶ Replay')
-                self.btn_action.ax.set_facecolor('#3498db')
-
-                self.status_text.set_text('Playing… choose a tone')
-                self.status_text.set_color('#3498db')
+                self.btn_play.label.set_text('▶ Replay')
+                
+                self.status_pill.set_text('● playing')
+                self.status_pill.set_color(Design.status['playing'])
+                self.fig.canvas.draw_idle()
             except Exception as e:
                 print(f"Playback error: {e}")
 
+
     def _next_word(self):
+        if not self.answered and self.current_item:
+            return # Force answering before proceeding
         self.question_count += 1
         if self.question_count >= self.max_questions or self.question_count >= len(self.vocab_items):
             print("Quiz Completed.")
@@ -566,6 +601,7 @@ class ToneIntroductionQuizMixed:
             plt.close(self.fig)
         else:
             self._select_next_item()
+
 
     def _save_results_to_file(self):
         filename = "session1_SAI_results.csv"
@@ -585,6 +621,7 @@ class ToneIntroductionQuizMixed:
         except Exception as e:
             print(f"Error saving CSV: {e}")
 
+
     def _select_next_item(self):
         self.is_playing = False
         self.answered = False
@@ -597,24 +634,31 @@ class ToneIntroductionQuizMixed:
         self.vis.img[:] = 0
         self.im_sai.set_data(self.rgb_img)
 
-        self.feedback_text.set_text('')
+        self.feedback_badge.set_text('')
+        self.reveal_char.set_text('')
+        
         self.current_item = self.vocab_items[self.question_count]
 
-        self.btn_action.label.set_text('▶ Play')
-        self.btn_action.ax.set_facecolor('#3498db')
-
-        self.status_text.set_text('Click Play to listen')
-        self.status_text.set_color('#7f8c8d')
+        self.btn_play.label.set_text('▶ Play')
+        
+        self.status_pill.set_text('● idle')
+        self.status_pill.set_color(Design.status['idle'])
 
         self._update_answer_display()
         self._update_progress()
+        self.fig.canvas.draw_idle()
+
 
     def _update_progress(self):
+        pct = (self.question_count) / self.max_questions if self.max_questions else 0
+        self.progress_bar.set_width(pct)
+        
         n_syl = self.current_item.get('syllables', 1) if self.current_item else 1
-        progress = f"Question {self.question_count + 1} / {self.max_questions}"
+        progress = f"{self.question_count + 1} / {self.max_questions}"
         if n_syl > 1:
-            progress += "    (2 syllables — pick tones in order)"
+            progress += "   (2 syllables)"
         self.progress_text.set_text(progress)
+
 
     # ---------------------------------------------------------------
     # Keyboard shortcuts
@@ -636,13 +680,12 @@ class ToneIntroductionQuizMixed:
             if self.selected_tones and not self.answered:
                 self.selected_tones.pop()
                 self._update_answer_display()
-                self.fig.canvas.draw_idle()
+
 
     def _switch_to_production(self):
-        """Close this app and launch the production mode script."""
         print("Switching to Production Mode…")
-        self.status_text.set_text('Switching to Production mode…')
-        self.status_text.set_color('#e67e22')
+        self.feedback_badge.set_text('Switching...')
+        self.feedback_badge.set_color('#E67E22')
         self.fig.canvas.draw_idle()
         plt.pause(0.4)
 
@@ -672,6 +715,7 @@ class ToneIntroductionQuizMixed:
 
         plt.close(self.fig)
 
+
     # ---------------------------------------------------------------
     # Animation
     # ---------------------------------------------------------------
@@ -697,7 +741,6 @@ class ToneIntroductionQuizMixed:
             self.vis.img[:, :-1] = self.vis.img[:, 1:]
             self.vis.draw_column(self.vis.img[:, -1])
 
-        # Vowel Color + Brightness Boost
         vowel_coords = getattr(self.vis, 'vowel_coords', np.array([0.0, 0.0])).flatten()
         vc_x = float(vowel_coords[0]) if len(vowel_coords) > 0 else 0.0
         vc_y = float(vowel_coords[1]) if len(vowel_coords) > 1 else 0.0
