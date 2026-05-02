@@ -1,0 +1,3 @@
+item_idx,chinese,pinyin,syllables,correct_tone,user_answer,is_correct,ref_audio,timestamp
+2,心,xīn,1,1,1,True,02_心_1.wav,2026-05-02 15:52:17
+4,去,qù,1,4,4,True,12_去_4.wav,2026-05-02 15:52:24

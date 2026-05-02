@@ -124,32 +124,32 @@ class VocabList:
 
         # --- 1. Define One-Syllable Words ---
         words_one = [
-            {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "syllables": 1, "audio": "01_天_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 2,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "syllables": 1, "audio": "02_心_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 3,  "chinese": "车", "pinyin": "chē",  "tone": "1", "syllables": 1, "audio": "03_车_1.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 4,  "chinese": "学", "pinyin": "xué",  "tone": "2", "syllables": 1, "audio": "04_学_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 5,  "chinese": "人", "pinyin": "rén",  "tone": "2", "syllables": 1, "audio": "05_人_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 6,  "chinese": "白", "pinyin": "bái",  "tone": "2", "syllables": 1, "audio": "06_白_2.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 7,  "chinese": "老", "pinyin": "lǎo",  "tone": "3", "syllables": 1, "audio": "07_老_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 8,  "chinese": "火", "pinyin": "huǒ",  "tone": "3", "syllables": 1, "audio": "08_火_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 9,  "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "syllables": 1, "audio": "09_狗_3.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 10, "chinese": "叫", "pinyin": "jiào", "tone": "4", "syllables": 1, "audio": "10_叫_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 11, "chinese": "骂", "pinyin": "mà",   "tone": "4", "syllables": 1, "audio": "11_骂_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
-            {"id": 12, "chinese": "去", "pinyin": "qù",   "tone": "4", "syllables": 1, "audio": "12_去_4.wav", "folder": "mandarin_audio_one_syllable", "type": "word"},
+            {"id": 1,  "chinese": "天", "pinyin": "tiān", "tone": "1", "syllables": 1, "audio": "01_天_1.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 2,  "chinese": "心", "pinyin": "xīn",  "tone": "1", "syllables": 1, "audio": "02_心_1.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 3,  "chinese": "车", "pinyin": "chē",  "tone": "1", "syllables": 1, "audio": "03_车_1.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 4,  "chinese": "学", "pinyin": "xué",  "tone": "2", "syllables": 1, "audio": "04_学_2.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 5,  "chinese": "人", "pinyin": "rén",  "tone": "2", "syllables": 1, "audio": "05_人_2.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 6,  "chinese": "白", "pinyin": "bái",  "tone": "2", "syllables": 1, "audio": "06_白_2.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 7,  "chinese": "老", "pinyin": "lǎo",  "tone": "3", "syllables": 1, "audio": "07_老_3.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 8,  "chinese": "火", "pinyin": "huǒ",  "tone": "3", "syllables": 1, "audio": "08_火_3.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 9,  "chinese": "狗", "pinyin": "gǒu",  "tone": "3", "syllables": 1, "audio": "09_狗_3.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 10, "chinese": "叫", "pinyin": "jiào", "tone": "4", "syllables": 1, "audio": "10_叫_4.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 11, "chinese": "骂", "pinyin": "mà",   "tone": "4", "syllables": 1, "audio": "11_骂_4.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 12, "chinese": "去", "pinyin": "qù",   "tone": "4", "syllables": 1, "audio": "12_去_4.wav", "folder": "mandarin_audio", "type": "word"},
         ]
 
         # --- 2. Define Two-Syllable Words ---
         words_two = [
-            {"id": 201, "chinese": "中国", "pinyin": "zhōngguó", "tone": "1-2", "syllables": 2, "audio": "01_中国_12.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 202, "chinese": "商店", "pinyin": "shāngdiàn", "tone": "1-4", "syllables": 2, "audio": "02_商店_14.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 203, "chinese": "明天", "pinyin": "míngtiān", "tone": "2-1", "syllables": 2, "audio": "03_明天_21.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 204, "chinese": "牛奶", "pinyin": "niúnǎi",   "tone": "2-3", "syllables": 2, "audio": "04_牛奶_23.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 205, "chinese": "学校", "pinyin": "xuéxiào",  "tone": "2-4", "syllables": 2, "audio": "05_学校_24.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 206, "chinese": "老师", "pinyin": "lǎoshī",   "tone": "3-1", "syllables": 2, "audio": "06_老师_31.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 207, "chinese": "美国", "pinyin": "měiguó",   "tone": "3-2", "syllables": 2, "audio": "07_美国_32.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 208, "chinese": "面包", "pinyin": "miànbāo",  "tone": "4-1", "syllables": 2, "audio": "08_面包_41.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 209, "chinese": "问题", "pinyin": "wèntí",    "tone": "4-2", "syllables": 2, "audio": "09_问题_42.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
-            {"id": 210, "chinese": "电脑", "pinyin": "diànnǎo",  "tone": "4-3", "syllables": 2, "audio": "10_电脑_43.wav", "folder": "mandarin_audio_two_syllable", "type": "word"},
+            {"id": 201, "chinese": "中国", "pinyin": "zhōngguó", "tone": "1-2", "syllables": 2, "audio": "01_中国_12.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 202, "chinese": "商店", "pinyin": "shāngdiàn", "tone": "1-4", "syllables": 2, "audio": "02_商店_14.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 203, "chinese": "明天", "pinyin": "míngtiān", "tone": "2-1", "syllables": 2, "audio": "03_明天_21.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 204, "chinese": "牛奶", "pinyin": "niúnǎi",   "tone": "2-3", "syllables": 2, "audio": "04_牛奶_23.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 205, "chinese": "学校", "pinyin": "xuéxiào",  "tone": "2-4", "syllables": 2, "audio": "05_学校_24.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 206, "chinese": "老师", "pinyin": "lǎoshī",  "tone": "3-1", "syllables": 2, "audio": "06_老师_31.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 207, "chinese": "美国", "pinyin": "měiguó",   "tone": "3-2", "syllables": 2, "audio": "07_美国_32.wav", "folder": "mandarin_audio", "type": "word"},
+            {"id": 208, "chinese": "面包", "pinyin": "miànbāo", "tone":"4-1", "syllables":2, "audio": "08_面包_41.wav", "folder":"mandarin_audio","type":"word"},
+            {"id": 209,"chinese":  "问题", "pinyin": "wèntí",   "tone":"4-2",  "syllables":2, "audio":"09_问题_42.wav","folder":"mandarin_audio","type":"word"},
+            {"id": 210,"chinese":"电脑","pinyin":"diànnǎo", "tone":"4-3","syllables":2,"audio":"10_电脑_43.wav","folder":"mandarin_audio","type":"word"},
         ]
 
         # --- 3. Validate Files ---
@@ -860,7 +860,7 @@ class SAIVisualizationWithWav2Vec2:
             interpolation='bilinear', extent=[0, self.sai_width, 0, self.n_channels],
             cmap='jet', vmin=0, vmax=255
         )
-        self.ax_file.set_title('Reference Pitchogram', color='cyan', fontsize=14, weight='bold')
+        self.ax_file.set_title('Reference Pitchogram', color='cyan', fontsize=30, weight='bold')
         self.ax_file.axis('off')
 
         self.ax_practice = self.fig.add_subplot(gs[1, 0])
@@ -874,12 +874,12 @@ class SAIVisualizationWithWav2Vec2:
         
         self.practice_text = self.ax_practice.text(
             0.5, 0.6, item_text, transform=self.ax_practice.transAxes,
-            color='white', ha='center', fontsize=16, weight='bold'
+            color='white', ha='center', fontsize=30, weight='bold'
         )
 
         self.status_text = self.ax_practice.text(
             0.5, 0.2, 'Ready', transform=self.ax_practice.transAxes,
-            color='yellow', ha='center', fontsize=11
+            color='yellow', ha='center', fontsize=30
         )
 
         self.progress_text = self.ax_practice.text(0, 0, "", alpha=0) 
