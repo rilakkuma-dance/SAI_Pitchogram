@@ -336,7 +336,7 @@ class ToneIntroductionQuizMixed:
             fontsize=26, weight='bold', fontfamily=Design.font_serif, color=Design.text_main
         )
 
-        # --- Distinct Tone Buttons ---
+        # --- Distinct Tone Cards (label panel + contour image, session_2 style) ---
         n_buttons = 4
         total_width = 0.16
         button_height = 0.10
@@ -344,48 +344,61 @@ class ToneIntroductionQuizMixed:
         gap = (1.0 - 2 * side_margin - n_buttons * total_width) / (n_buttons - 1)
         button_y = 0.33
 
-        self.tone_buttons = {}
-        self.tone_button_axes = {}
+        self.tone_buttons = {}        # kept for _update_tone_buttons compatibility
+        self.tone_button_axes = {}    # kept for _update_tone_buttons compatibility
+        self.tone_label_axes = {}
         self.tone_image_axes = {}
+        self.tone_image_handles = {}
 
         for i, tone_num in enumerate([1, 2, 3, 4]):
             x = side_margin + i * (total_width + gap)
-            base_color = Design.tones[tone_num]
+            base_color  = Design.tones[tone_num]
             light_color = Design.tones_light[tone_num]
-            
-            btn_w = total_width * 0.40
-            img_w = total_width * 0.60
-            
-            ax_btn = self.fig.add_axes([x, button_y, btn_w, button_height])
-            btn = Button(ax_btn, str(tone_num), color=light_color, hovercolor=base_color)
-            btn.label.set_fontsize(28)
-            btn.label.set_weight('bold')
-            btn.label.set_fontfamily(Design.font_serif)
-            btn.label.set_color(base_color)
-            btn.on_clicked(lambda event, t=tone_num: self._on_tone_button(t))
-            
-            self.tone_buttons[tone_num] = btn
-            self.tone_button_axes[tone_num] = ax_btn
 
-            img_x = x + btn_w
+            label_w = total_width * 0.40
+            img_w   = total_width * 0.60
+
+            # --- Label panel (replaces old Button widget; still clickable) ---
+            ax_lbl = self.fig.add_axes([x, button_y, label_w, button_height])
+            ax_lbl.set_xticks([]); ax_lbl.set_yticks([])
+            ax_lbl.set_facecolor(light_color)
+            for spine in ax_lbl.spines.values():
+                spine.set_edgecolor(light_color)
+                spine.set_linewidth(0)
+            ax_lbl.text(
+                0.5, 0.5, str(tone_num), ha='center', va='center',
+                fontsize=28, weight='bold',
+                fontfamily=Design.font_serif, color=base_color,
+                transform=ax_lbl.transAxes
+            )
+            self.tone_label_axes[tone_num] = ax_lbl
+            # Mirror old API so _update_tone_buttons still works
+            self.tone_button_axes[tone_num] = ax_lbl
+
+            def make_label_clickable(event, t=tone_num, axis=ax_lbl):
+                if event.inaxes == axis:
+                    self._on_tone_button(t)
+            self.fig.canvas.mpl_connect('button_press_event', make_label_clickable)
+
+            # --- Contour image panel ---
+            img_x = x + label_w
             ax_img = self.fig.add_axes([img_x, button_y, img_w, button_height])
-            ax_img.axis('off')
+            ax_img.set_xticks([]); ax_img.set_yticks([])
             ax_img.patch.set_visible(True)
             ax_img.patch.set_facecolor(light_color)
+            for spine in ax_img.spines.values():
+                spine.set_edgecolor(light_color)
+                spine.set_linewidth(0)
 
-            try:
-                img_path = self.TONE_IMAGES[tone_num]
-                if os.path.exists(img_path):
-                    img = plt.imread(img_path)
-                    ax_img.imshow(img, aspect='equal')
-            except Exception: pass
+            tone_img = self._load_tone_reference_image(tone_num)
+            handle = ax_img.imshow(tone_img, aspect='auto')
+            self.tone_image_axes[tone_num] = ax_img
+            self.tone_image_handles[tone_num] = handle
 
             def make_img_clickable(event, t=tone_num, axis=ax_img):
                 if event.inaxes == axis:
                     self._on_tone_button(t)
-                    
             self.fig.canvas.mpl_connect('button_press_event', make_img_clickable)
-            self.tone_image_axes[tone_num] = ax_img
 
         # --- Visual Answer Slots ---
         self.ax_answer_area = self.fig.add_axes([0.3, 0.15, 0.4, 0.12])
@@ -394,14 +407,14 @@ class ToneIntroductionQuizMixed:
         self.slot1 = FancyBboxPatch((0.1, 0.2), 0.35, 0.6, boxstyle="round,pad=0,rounding_size=0.1", 
                                     facecolor='#EFEFEF', edgecolor='#CCCCCC', lw=2, transform=self.ax_answer_area.transAxes)
         self.ax_answer_area.add_patch(self.slot1)
-        self.slot1_text = self.ax_answer_area.text(0.275, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_serif, color='white', transform=self.ax_answer_area.transAxes)
+        self.slot1_text = self.ax_answer_area.text(0.275, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_sans[0], color='white', transform=self.ax_answer_area.transAxes)
         
         self.slot_divider = self.ax_answer_area.text(0.5, 0.5, '-', ha='center', va='center', fontsize=24, color='#999999', transform=self.ax_answer_area.transAxes)
         
         self.slot2 = FancyBboxPatch((0.55, 0.2), 0.35, 0.6, boxstyle="round,pad=0,rounding_size=0.1", 
                                     facecolor='#EFEFEF', edgecolor='#CCCCCC', lw=2, transform=self.ax_answer_area.transAxes)
         self.ax_answer_area.add_patch(self.slot2)
-        self.slot2_text = self.ax_answer_area.text(0.725, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_serif, color='white', transform=self.ax_answer_area.transAxes)
+        self.slot2_text = self.ax_answer_area.text(0.725, 0.5, '', ha='center', va='center', fontsize=26, weight='bold', fontfamily=Design.font_sans[0], color='white', transform=self.ax_answer_area.transAxes)
 
         # Inline Feedback Badge
         self.feedback_badge = self.ax_ui.text(0.72, 0.22, '', ha='left', va='center', fontsize=18, fontfamily='Segoe UI Symbol', weight='bold')
@@ -421,6 +434,7 @@ class ToneIntroductionQuizMixed:
         self.btn_next.label.set_color('#222')
         self.btn_next.label.set_weight('bold')
         self.btn_next.label.set_fontsize(16)
+        self.btn_next.label.set_fontfamily(Design.font_sans[0])
         self.btn_next.on_clicked(lambda event: self._next_word())
 
         self.ax_mode_btn = plt.axes([0.56, 0.05, 0.20, 0.045])
@@ -434,26 +448,23 @@ class ToneIntroductionQuizMixed:
 
 
     def _update_tone_buttons(self):
-        """Selected state inverts automatically."""
+        """Selected state: fill panel with tone colour; resting state: light tint."""
         for t in [1, 2, 3, 4]:
-            ax_btn = self.tone_button_axes[t]
-            btn = self.tone_buttons[t]
+            ax_lbl = self.tone_label_axes[t]
             ax_img = self.tone_image_axes[t]
-            
-            base_color = Design.tones[t]
+            base_color  = Design.tones[t]
             light_color = Design.tones_light[t]
-            
+
             if t in self.selected_tones:
-                btn.color = base_color
-                btn.hovercolor = base_color
-                btn.label.set_color('white')
+                ax_lbl.set_facecolor(base_color)
                 ax_img.patch.set_facecolor(base_color)
+                for txt in ax_lbl.texts:
+                    txt.set_color('white')
             else:
-                btn.color = light_color
-                btn.hovercolor = base_color
-                btn.label.set_color(base_color)
+                ax_lbl.set_facecolor(light_color)
                 ax_img.patch.set_facecolor(light_color)
-            ax_btn.set_facecolor(btn.color)
+                for txt in ax_lbl.texts:
+                    txt.set_color(base_color)
         self.fig.canvas.draw_idle()
 
 
@@ -551,11 +562,11 @@ class ToneIntroductionQuizMixed:
             self.feedback_badge.set_fontfamily('Segoe UI Symbol')
         else:
             correct_display = ' · '.join(list(correct_answer))
-            self.feedback_badge.set_text(f'✗ Correct: {correct_display}')
+            self.feedback_badge.set_text(f'✗ Incorrect: {correct_display}')
             self.feedback_badge.set_color(Design.incorrect)
             self.feedback_badge.set_fontfamily('Segoe UI Symbol')
 
-        self.btn_play.label.set_text('▶ Replay')
+        self.btn_play.label.set_text(r'$\blacktriangleright$ Play')
         self.fig.canvas.draw_idle()
 
 
@@ -580,7 +591,7 @@ class ToneIntroductionQuizMixed:
                     self.question_start_time = time.time()
                     self.timer_started = True
 
-                self.btn_play.label.set_text('▶ Replay')
+                self.btn_play.label.set_text(r'$\blacktriangleright$ Play')
                 
                 self.status_pill.set_text('● playing')
                 self.status_pill.set_color(Design.status['playing'])
@@ -639,7 +650,7 @@ class ToneIntroductionQuizMixed:
         
         self.current_item = self.vocab_items[self.question_count]
 
-        self.btn_play.label.set_text('▶ Play')
+        self.btn_play.label.set_text(r'$\blacktriangleright$ Play')
         
         self.status_pill.set_text('● idle')
         self.status_pill.set_color(Design.status['idle'])
@@ -771,6 +782,45 @@ class ToneIntroductionQuizMixed:
         self.im_sai.set_data(self.rgb_img)
         return [self.im_sai]
     
+    def _load_tone_reference_image(self, tone_number):
+        """Load a tone-reference image; fall back to a drawn contour in the tone colour."""
+        candidate_paths = [
+            Path(self.TONE_IMAGES[tone_number]),
+            Path(self.SCRIPT_DIR) / f"tone_{tone_number}.png",
+            Path(self.SCRIPT_DIR) / "tone_images" / f"tone_{tone_number}.png",
+            Path(self.SCRIPT_DIR) / "assets" / f"tone_{tone_number}.png",
+        ]
+        for p in candidate_paths:
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception as e:
+                    print(f"Could not read tone image {p}: {e}")
+
+        # Fallback: draw contour in the matching tone colour
+        H, W = 80, 120
+        img = np.ones((H, W, 3), dtype=np.float32)   # white background
+        xs = np.linspace(0, 1, W)
+        if tone_number == 1:
+            ys = np.full_like(xs, 0.2)
+        elif tone_number == 2:
+            ys = 1.0 - xs * 0.8
+        elif tone_number == 3:
+            ys = 0.4 + 0.55 * (2 * xs - 1) ** 2
+            ys = 1.0 - ys
+        elif tone_number == 4:
+            ys = 0.2 + xs * 0.8
+        else:
+            ys = np.full_like(xs, 0.5)
+        ys_pix = np.clip((ys * (H - 10) + 5).astype(int), 0, H - 1)
+        hex_color = Design.tones.get(tone_number, '#222222').lstrip('#')
+        rgb = tuple(int(hex_color[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+        for x, y in zip(np.arange(W), ys_pix):
+            for dy in range(-2, 3):
+                yy = np.clip(y + dy, 0, H - 1)
+                img[yy, x] = rgb
+        return img
+
     def show(self):
         self.ani = animation.FuncAnimation(
             self.fig, self.update_animation, interval=50, blit=False, cache_frame_data=False
