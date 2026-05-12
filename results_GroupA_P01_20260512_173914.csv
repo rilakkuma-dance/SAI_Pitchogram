@@ -1,0 +1,11 @@
+participant_id,trial_number,trial_id,video_name,pinyin,meaning,syllables_correct,syllables_guessed,syllables_right,correct_tones,participant_tones,tones_correct,fully_correct,plays_used,response_time_s,timestamp
+P01,1,1,天_f,tiān,sky,1,1,1,1,3,0,0,1,11.797,2026-05-12T17:38:01.761950
+P01,2,2,中国_m,Zhōngguó,China,2,1,0,1-2,2,0,0,1,10.065,2026-05-12T17:38:13.232536
+P01,3,3,烫_f,tàng,scalding,1,1,1,4,2,0,0,0,9.7,2026-05-12T17:38:24.335738
+P01,4,4,河马_f,hémǎ,hippopotamus,2,2,1,2-3,1-2,0,0,1,11.082,2026-05-12T17:38:36.823413
+P01,5,5,阴_f,yīn,cloudy,1,1,1,1,2,0,0,2,11.777,2026-05-12T17:38:50.002631
+P01,6,6,早饭_f,zǎofàn,breakfast,2,2,1,3-4,2-3,0,0,0,4.088,2026-05-12T17:38:55.513477
+P01,7,7,雨_m,yǔ,rain,1,2,0,3,2-2,0,0,0,2.828,2026-05-12T17:38:59.753230
+P01,8,8,书包_f,shūbāo,schoolbag,2,2,1,1-1,1-1,1,1,0,3.739,2026-05-12T17:39:04.898396
+P01,9,9,熟_f,shú,cooked,1,2,0,2,2-3,0,0,0,2.849,2026-05-12T17:39:09.153312
+P01,10,10,买菜_m,mǎicài,buy vegetables,2,2,1,3-4,3-2,0,0,0,2.628,2026-05-12T17:39:13.194905

@@ -47,8 +47,8 @@ class PracticeSet:
         self.script_dir = script_dir
         self.current_set = []
         self.current_index = 0
-        self.items_one = self._scan_folder('mandarin_audio_one_syllable')
-        self.items_two = self._scan_folder('mandarin_audio_two_syllable')
+        self.items_one = self._scan_folder('mandarin_audio')
+        self.items_two = self._scan_folder('mandarin_audio')
         
         if not self.items_one and not self.items_two:
             print("❌ No audio files found.")
